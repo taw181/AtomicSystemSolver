@@ -11,11 +11,10 @@ import qutipfuncs as qf
 
 def _pol_from_stokes(self):
     ep, em = qf.Stokes2EpEm(*self.S)
-    self.pol = [ep, 0, em] 
+    self.pol = [ep, 0, em]
 
 class Level():
-    
-    def __init__(self, name='LJ', kind='g', J=1/2, S=1/2, L=0, pop=0):
+    def __init__(self, name='LJ', kind='g', J=0, S=1/2, L=0, pop=0):
         self.name = name
         self.J = J
         self.S = S
@@ -27,15 +26,15 @@ class Level():
         self.pop = pop
         if pop == 0:
             self.pop = [0]*self.N
-        
+
+
 class Atom():
-    
     def __init__(self):
         self.levels = []
         self.levels.append(Level(kind=g, J=1/2, L=0))
-           
+
+
 class Laser():
-    
     def __init__(self,  L1=None, L2=None, Omega=0, Delta=0, lw=0, k=[0,0,1], S=[0,0,1]):
         self.L1 = L1
         self.L2 = L2
@@ -46,10 +45,10 @@ class Laser():
         self.k = k
         self.S = S
         _pol_from_stokes(self)
-        
-        
+
+
 class Cavity():
-    
+
     def __init__(self, l1='1', l2='2', g=0, kappa=0, N=2, modes='2', k=[0,0,1], pol=[1,0,1]):
         self.g = g
         self.kappa = kappa
