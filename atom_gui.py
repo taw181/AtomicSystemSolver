@@ -4,7 +4,7 @@ import numpy as np
 
 from PyQt5 import QtCore, QtGui
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal, QThread, QThreadPool, QRunnable, QObject
+from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal, QThread, QThreadPool, QRunnable, QObject, QSettings
 from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
 
@@ -22,6 +22,7 @@ class AtomGui(QMainWindow):
         self.setWindowTitle("Atomic System Solver")
         self.mainWidget = QWidget(self)
         self.mainLayout = QHBoxLayout()
+        self.settings = QSettings()
 
         self.systemLayout = QVBoxLayout()
 
@@ -46,6 +47,7 @@ class AtomGui(QMainWindow):
         self.mainWidget.setLayout(self.mainLayout)
         self.setCentralWidget(self.mainWidget)
 
+
 class levelsSection(QFrame):
     def __init__(self,parent=None):
         super().__init__(parent)
@@ -57,9 +59,6 @@ class levelsSection(QFrame):
         self.addLevelButton = QPushButton('Add level')
         self.addLevelButton.clicked.connect(self.addLevel)
         self.layout.addWidget(self.addLevelButton)
-
-        self.layout.addWidget(levelWidget(parent=self))
-        self.num +=1
         self.setLayout(self.layout)
 
     def addLevel(self):
@@ -74,6 +73,7 @@ class levelWidget(QFrame):
         self.setFrameStyle(QFrame.Box)
 
         self.nameBox = TextBox('Name')
+        self.nameBox.Box.setText(str(num))
         self.nameBox.Box.textChanged.connect(lambda: self.setlevel(num,parent))
         self.layout.addWidget(self.nameBox)
 
@@ -83,24 +83,34 @@ class levelWidget(QFrame):
         self.kindBox.Box.currentIndexChanged.connect(lambda: self.setlevel(num,parent))
         self.layout.addWidget(self.kindBox)
 
-        # self.popBox = TextBox('pop')
-        # self.popBox.Box.textChanged.connect(lambda: self.setlevel(parent))
-        # self.layout.addWidget(self.popBox)
-        self.popBox = SpinBox('pop')
-        self.popBox.Box.valueChanged.connect(lambda: self.setlevel(num,parent))
+        self.popBox = TextBox('pop')
+        self.popBox.Box.textChanged.connect(lambda: self.setlevel(num,parent))
         self.layout.addWidget(self.popBox)
 
-        self.setLayout(self.layout)
+        self.jBox = SpinBox('J')
+        self.jBox.Box.valueChanged.connect(lambda: self.setlevel(num,parent))
+        self.layout.addWidget(self.jBox)
 
+        self.lBox = SpinBox('L')
+        self.lBox.Box.valueChanged.connect(lambda: self.setlevel(num,parent))
+        self.layout.addWidget(self.lBox)
+
+        # self.removeButton = QPushButton('Remove Level')
+        # self.removeButton.clicked.connect(lambda: self.removeLevel(num,parent))
+        # self.layout.addWidget(self.removeButton)
+
+        self.setLayout(self.layout)
 
     def setlevel(self,num,parent):
         levelpars = {}
         levelpars['name'] = self.nameBox.Box.text()
         levelpars['kind'] = self.kindBox.Box.currentText()
-        levelpars['pop'] = [self.popBox.Box.value()]
-
+        levelpars['pop'] = [float(i) for i in self.popBox.Box.text().split(',')]
+        levelpars['J'] = self.jBox.Box.value()
+        levelpars['L'] = self.lBox.Box.value()
         parent.levelsdict[str(num)] = levelpars
 
+        print(levelpars['pop'])
 
 class lasersSection(QFrame):
     def __init__(self,parent=None):
@@ -113,9 +123,6 @@ class lasersSection(QFrame):
         self.addLaserButton = QPushButton('Add laser')
         self.addLaserButton.clicked.connect(lambda: self.addLaser(parent))
         self.layout.addWidget(self.addLaserButton)
-
-        self.layout.addWidget(laserWidget(parent=parent))
-        self.num += 1
 
         self.setLayout(self.layout)
 
@@ -158,6 +165,7 @@ class laserWidget(QFrame):
         laserpars['Omega'] = self.omegaBox.Box.value()
 
         parent.lasers.lasersdict[str(num)] = laserpars
+        #print('Laser {} set'.format(num))
 
     def getLevels(self, parent):
         print('getting levels')
@@ -178,18 +186,20 @@ class paramsSection(QFrame):
         self.setFrameStyle(QFrame.Box)
         self.layout = QVBoxLayout()
 
+        self.tlistGroup = QGroupBox('tlist')
         self.tlistLayout = QHBoxLayout()
-        self.tlistLayout.addWidget(QLabel('tlist'))
+
         self.startBox = SpinBox('t_start',int=True)
         self.tlistLayout.addWidget(self.startBox)
         self.endBox = SpinBox('t_stop',int=True,default=10)
         self.tlistLayout.addWidget(self.endBox)
         self.stepsBox = SpinBox('t_steps',int=True,default=1000)
         self.tlistLayout.addWidget(self.stepsBox)
-        self.layout.addLayout(self.tlistLayout)
+        self.tlistGroup.setLayout(self.tlistLayout)
+        self.layout.addWidget(self.tlistGroup)
 
+        self.bFieldGroup = QGroupBox('B Field')
         self.bFieldLayout = QHBoxLayout()
-        self.bFieldLayout.addWidget(QLabel('B Field'))
         self.bBox = SpinBox('B')
         self.bFieldLayout.addWidget(self.bBox)
         self.bDirBox = TextBox('Bdir')
@@ -197,7 +207,8 @@ class paramsSection(QFrame):
         self.zeemanBool = QCheckBox()
         self.zeemanBool.setText('Zeeman?')
         self.bFieldLayout.addWidget(self.zeemanBool)
-        self.layout.addLayout(self.bFieldLayout)
+        self.bFieldGroup.setLayout(self.bFieldLayout)
+        self.layout.addWidget(self.bFieldGroup)
 
         self.othersLayout = QHBoxLayout()
         self.mixedBool = QCheckBox()
