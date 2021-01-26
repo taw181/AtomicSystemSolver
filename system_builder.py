@@ -72,14 +72,14 @@ class AtomSystem:
 
     def _transitions(self,levels):
         self.Aops = {}
-        for p,level_g in enumerate(levels):
+        for p, level_g in enumerate(levels):
             Jg = level_g.J
             states_g = level_g.states
-            if level_g.kind == 'g':
-                for q,level_e in enumerate(levels):
+            for q,level_e in enumerate(levels):
+                if level_e.name != level_g.name:
                     Je = level_e.J
                     states_e = level_e.states
-                    if level_e.kind == 'e' and abs(Jg - Je) <= 1:
+                    if abs(Jg - Je) <= 1:
                         name = level_g.name + level_e.name
                         if level_g.J != 0:
                             self.Aops[name] = [sum([states_g[i]*states_e[j].dag()*qu.clebsch(Jg,1,Je,level_g.M[i],k,level_e.M[j]) for i in range(level_g.N) for j in range(level_e.N)]) for k in [-1,0,1]]
@@ -107,10 +107,20 @@ class AtomSystem:
             self.Hc = cavity.g*self.ad*Hc + np.conj(cavity.g)*self.a*Hc.dag()
 
 
-    def _hamiltonian(self,levels,lasers):
-        self.H0 = qu.Qobj(np.zeros([self.Nat,self.Nat]))
+    def _hamiltonian(self):
+        H0 = []
+        for laser in self.lasers:
+            name = laser.L1
+            proj = sum(self.projectors[name])
+            H0.append(laser.Delta*proj)
         if self.cavity:
-            self.H0 = qu.tensor(self.H0,self.Ic)
+            name = self.cavity.name
+            dL = 0
+            for laser in self.lasers:
+                if laser.name == name:
+                    dL = laser.Delta
+            H0.append((self.cavity.Delta - dL)*self.ad*self.a)
+        self.H0 = sum(H0)
 
         # if self.params['tdep']:
         #     self.H = [self.H0,[self.HL,params['pulseshape']]]
@@ -135,7 +145,7 @@ class AtomSystem:
         self.e_ops = []
         for i in self.projectors.values():
             self.e_ops += i
-        if self.cavity:    
+        if self.cavity:
             self.e_ops.append(self.ad*self.a)
         # C_spon = np.sqrt(params['gamma'])*self.sm
         # C_lw_g = np.sqrt(LW)*proj_g

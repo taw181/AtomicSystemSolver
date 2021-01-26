@@ -35,7 +35,7 @@ class Atom():
 
 
 class Laser():
-    def __init__(self,  L1=None, L2=None, Omega=0, Delta=0, lw=0, k=[0,0,1], S=[0,0,1]):
+    def __init__(self,  L1=None, L2=None, Omega=0, Delta=0, lw=0, k=[0, 0, 1], S=[0, 0, 1]):
         self.L1 = L1
         self.L2 = L2
         self.name = L1+L2
@@ -49,12 +49,13 @@ class Laser():
 
 class Cavity():
 
-    def __init__(self, L1='1', L2='2', g=0, kappa=0, N=2, modes='2', k=[0,0,1], pol=[1,0,1],n=0):
+    def __init__(self, L1='1', L2='2', g=0, kappa=0, Delta=0, N=2, modes='2', k=[0, 0, 1], pol=[1, 0, 1],n=0):
         self.L1 = L1
         self.L2 = L2
         self.name = L1+L2
         self.g = g
         self.kappa = kappa
+        self.Delta = Delta
         self.k = k
         self.pol = pol
         self.N = N
