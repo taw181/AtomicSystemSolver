@@ -9,9 +9,16 @@ import numpy as np
 import qutip as qu
 import qutipfuncs as qf
 
-def _pol_from_stokes(self):
-    ep, em = qf.Stokes2EpEm(*self.S)
-    self.pol = [ep, 0, em]
+def _pol_from_stokes(S):
+    ep, em = qf.Stokes2EpEm(*S)
+    return [ep, 0, em]
+
+def _k_from_angle(angle):
+    angle = np.radians(angle)
+    kx = np.sin(angle)
+    ky = 0
+    kz = np.cos(angle)
+    return [kx,ky,kz]
 
 class Level():
     def __init__(self, name='LJ', kind='g', J=0, S=1/2, L=0, pop=0):
@@ -28,36 +35,41 @@ class Level():
             self.pop = [0]*self.N
 
 
-class Atom():
-    def __init__(self):
-        self.levels = []
-        self.levels.append(Level(kind=g, J=1/2, L=0))
-
-
 class Laser():
-    def __init__(self,  L1=None, L2=None, Omega=0, Delta=0, lw=0, k=[0, 0, 1], S=[0, 0, 1]):
+    def __init__(self,  L1='1', L2='2', Omega=0, Delta=0, lw=0, k=0, S=None, f=None):
         self.L1 = L1
         self.L2 = L2
         self.name = L1+L2
         self.Omega = Omega
         self.Delta = Delta
         self.lw = lw
-        self.k = k
-        self.S = S
-        _pol_from_stokes(self)
-
+        if type(k) == int or type(k) == float:
+            self.k = _k_from_angle(k)
+        else:
+            self.k = k
+        if S == None:
+            self.S = [0, 0, 1]
+        else:
+            self.S = S
+        self.pol = _pol_from_stokes(self.S)
+        self.f=f
 
 class Cavity():
-
-    def __init__(self, L1='1', L2='2', g=0, kappa=0, Delta=0, N=2, modes='2', k=[0, 0, 1], pol=[1, 0, 1],n=0):
+    def __init__(self, L1='1', L2='2', g=0, kappa=0, Delta=0, N=2, n=0, modes='2', k=0, pol=None):
         self.L1 = L1
         self.L2 = L2
         self.name = L1+L2
         self.g = g
         self.kappa = kappa
         self.Delta = Delta
-        self.k = k
-        self.pol = pol
+        if type(k) == int or type(k) == float:
+            self.k = _k_from_angle(k)
+        else:
+            self.k = k
+        if pol == None:
+            self.pol = [1,0,1]
+        else:
+            self.pol = pol
         self.N = N
         self.modes = modes
         self.states = [qu.basis(self.N,i) for i in range(self.N)]
