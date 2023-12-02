@@ -18,23 +18,29 @@ class AtomSystem:
         self.params = params
         self.levels = levels
         self.cavity = cavity
+        self.lasers = lasers
         self.result = None
+        self.Bdir = [0, 0, 1]
         # self.tlist = np.linspace(0,params['tmax'],params['steps'])
-        self._atom(levels)
-        self._transitions(levels)
+        self._atom()
+        self._transitions()
         if cavity:
             self._cavity(cavity)
 
-        self._Bfield(levels,params)
+        self._Bfield()
         # for laser in lasers:
         #     quf.pol(laser,self.params['Bdir'])
-        self._interactions(levels,lasers,cavity)
-        self._hamiltonian(levels,lasers)
+        self._interactions()
+        self._hamiltonian()
         #self._solve(levels)
 
-    def _atom(self,levels):
+    def _atom(self):
+        levels = self.levels
         self.astates=[]
         self.projectors={}
+        if not self.params['zeeman']:
+            for level in levels:
+                level.J = 0
         self.Nat = sum([i.N for i in levels])
         n=0
         for level in levels:
@@ -47,7 +53,7 @@ class AtomSystem:
             n+=level.N
         self.Iat = qu.qeye(self.Nat)
 
-    def _cavity(self,cavity):
+    def _cavity(self, cavity):
         N = cavity.N
         self.Ic = qu.qeye(N)
         # astates = [qu.tensor(astate,qu.qeye(N)) for astate in self.astates]
@@ -61,16 +67,17 @@ class AtomSystem:
         self.a = qu.tensor(self.Iat,qu.destroy(N))
         self.ad = self.a.dag()
 
-    def _Bfield(self,levels,params):
+    def _Bfield(self):
         self.HB = 0
-        for level in levels:
+        for level in self.levels:
             if level.J != 0:
-                lw = 2*np.pi*21.57*1e6
-                w = quf.zeemanFS(level.J,level.S,level.L,1E-4,lw)
+                scaling_factor = 2*np.pi*21.57*1e6
+                w = quf.zeemanFS(level.J,level.S,level.L,1E-4,scaling_factor)
                 for i,m in enumerate(level.M):
-                    self.HB += self.projectors[level.name][i]*m*w*params['B']
+                    self.HB += self.projectors[level.name][i]*m*w*self.params['B']
 
-    def _transitions(self,levels):
+    def _transitions(self):
+        levels = self.levels
         self.Aops = {}
         for p, level_g in enumerate(levels):
             Jg = level_g.J
@@ -79,32 +86,33 @@ class AtomSystem:
                 if level_e.name != level_g.name:
                     Je = level_e.J
                     states_e = level_e.states
-                    if abs(Jg - Je) <= 1:
+                    if abs(Jg - Je) <= 1 or not self.params['zeeman']:
                         name = level_g.name + level_e.name
                         if level_g.J != 0:
                             self.Aops[name] = [sum([states_g[i]*states_e[j].dag()*qu.clebsch(Jg,1,Je,level_g.M[i],k,level_e.M[j]) for i in range(level_g.N) for j in range(level_e.N)]) for k in [-1,0,1]]
                         else:
                             self.Aops[name] = [sum([states_g[i]*states_e[j].dag() for i in range(level_g.N) for j in range(level_e.N)])]
 
-    def _interactions(self,levels,lasers,cavity):
+    def _interactions(self):
+        levels, lasers, cavity = self.levels, self.lasers, self.cavity
         self.HL = []
-        for laser in lasers:
+        for laser in self.lasers:
             name = laser.name
             if self.params['zeeman']:
-                pol_at = quf.pol(laser,self.params['Bdir'])
+                pol_at = quf.pol(laser, self.Bdir)
                 HL = sum([pol_at[i]*self.Aops[name][i] for i in range(len(self.Aops[name]))])
             else:
                 HL = sum(self.Aops[name])
-            self.HL.append(laser.Omega * HL + np.conj(laser.Omega)*HL.dag())
+            self.HL.append(laser.Omega * HL + np.conj(laser.Omega ) *HL.dag())
         self.HL = sum(self.HL)
         if self.cavity:
-            name = cavity.name
+            name = self.cavity.name
             if self.params['zeeman']:
-                pol_c = quf.pol(cavity,self.params['Bdir'])
+                pol_c = quf.pol(cavity,self.Bdir)
                 Hc = sum([pol_c[i]*self.Aops[name][i] for i in range(len(self.Aops[name]))])
             else:
                 Hc = sum(self.Aops[name])
-            self.Hc = cavity.g*self.ad*Hc + np.conj(cavity.g)*self.a*Hc.dag()
+            self.Hc = cavity.g * self.ad * Hc + np.conj(cavity.g) * self.a * Hc.dag()
 
 
     def _hamiltonian(self):
@@ -131,20 +139,20 @@ class AtomSystem:
             self.H += self.Hc
 
 
-# H =   Omega * (sm + sm.dag())
     def solve(self):
+        tlist = np.linspace(0, self.params["t_max"], self.params["n_step"])
         levels = self.levels
-        if self.params['mixed']:
+        if not self.params['mixed']:
             self.rho0 = sum([level.pop[i]*qu.ket2dm(level.states[i]) for level in levels for i in range(len(level.pop))])
             if self.cavity:
                 self.rho0 = qu.tensor(self.rho0,self.cavity.psi0)
         else:
-            self.rho0 = qu.ket2dm(sum([level.pop[i]*level.states[i] for level in levels for i in range(len(level.pop))]).unit())
+            self.rho0 = sum([level.pop[i]*level.states[i] for level in levels for i in range(len(level.pop))])
             if self.cavity:
                 self.rho0 = qu.tensor(self.rho0,qu.ket2dm(self.cavity.psi0))
         self.e_ops = []
-        for i in self.projectors.values():
-            self.e_ops += i
+        for op in self.projectors.values():
+            self.e_ops += op
         if self.cavity:
             self.e_ops.append(self.ad*self.a)
         # C_spon = np.sqrt(params['gamma'])*self.sm

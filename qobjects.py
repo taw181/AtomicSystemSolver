@@ -21,22 +21,33 @@ def _k_from_angle(angle):
     return [kx,ky,kz]
 
 class Level():
-    def __init__(self, name='LJ', kind='g', J=0, S=1/2, L=0, pop=0):
+    def __init__(self, name='LJ', J=0, S=1/2, L=0, pop=0, energy=0):
         self.name = name
-        self.J = J
+        self._J = J
         self.S = S
         self.L = L
-        self.N = int(2*J+1)
-        self.M = np.arange(-J,J+1)
-        self.kind = kind
-        self.states = [qu.basis(self.N,i) for i in range(self.N)]
+        self.update_states()
         self.pop = pop
         if pop == 0:
             self.pop = [0]*self.N
+            
+    @property
+    def J(self):
+        return self._J
+
+    @J.setter
+    def J(self, new_J):
+        self._J = new_J
+        self.update_states()
+        
+    def update_states(self):
+        self.N = int(2*self.J+1)
+        self.M = np.arange(-self.J,self.J+1)
+        self.states = [qu.basis(self.N,i) for i in range(self.N)]
 
 
 class Laser():
-    def __init__(self,  L1='1', L2='2', Omega=0, Delta=0, lw=0, k=0, S=None, f=None):
+    def __init__(self,  L1='1', L2='2', Omega=0, Delta=0, lw=0, k=0, S=None):
         self.L1 = L1
         self.L2 = L2
         self.name = L1+L2
@@ -52,7 +63,13 @@ class Laser():
         else:
             self.S = S
         self.pol = _pol_from_stokes(self.S)
-        self.f=f
+        
+class Decay():
+    def __init__(self,  L1='1', L2='2', gamma=0):
+        self.L1 = L1
+        self.L2 = L2
+        self.name = L1+L2
+        self.gamma
 
 class Cavity():
     def __init__(self, L1='1', L2='2', g=0, kappa=0, Delta=0, N=2, n=0, modes='2', k=0, pol=None):
