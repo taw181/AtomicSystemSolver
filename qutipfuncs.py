@@ -30,7 +30,7 @@ def murelj(Jg,Je):
                 Ap[k,Me.index(m+1)]=qu.clebsch(Jg,1,Je,m,1,m+1)
         return Am,A0,Ap
 
-def zeemanFS(J,S,L,B,Gamma_phys):
+def zeemanFS(J,S,L,B,scaling_factor):
     #
     #  w = zeeman(J,S,L,F,I,B) calculates the angular frequency shift
     #  in terms of the linewidth Gamma_phys for unit change of m
@@ -58,7 +58,7 @@ def zeemanFS(J,S,L,B,Gamma_phys):
     hbar = 1.054572669125E-34
     #
     E = (1+(J*(J+1)+S*(S+1)-L*(L+1))/(2*J*(J+1)))* muB*B
-    w = E/(hbar*Gamma_phys)
+    w = E/(hbar*scaling_factor)
     return w
 
 def norm(lst):
