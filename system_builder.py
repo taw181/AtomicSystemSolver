@@ -10,6 +10,7 @@ import numpy as np
 import qutipfuncs as quf
 import matplotlib.pyplot as plt
 from qobjects import *
+from fractions import Fraction
 
 
 class AtomSystem:
@@ -150,15 +151,27 @@ class AtomSystem:
             self.rho0 = sum([level.pop[i]*level.states[i] for level in levels for i in range(len(level.pop))])
             if self.cavity:
                 self.rho0 = qu.tensor(self.rho0,qu.ket2dm(self.cavity.psi0))
-        self.e_ops = []
-        for op in self.projectors.values():
-            self.e_ops += op
-        if self.cavity:
-            self.e_ops.append(self.ad*self.a)
         # C_spon = np.sqrt(params['gamma'])*self.sm
         # C_lw_g = np.sqrt(LW)*proj_g
         # C_lw_e = np.sqrt(LW)*proj_e
         # self.c_ops = [C_spon]
         tlist = self.params['tlist']
-        self.result = qu.mesolve(self.H,self.rho0,tlist,e_ops = self.e_ops)
-        return self.result
+        options = qu.Options(store_states=True)
+        self.result = qu.mesolve(self.H, self.rho0, tlist, options=options)
+        
+        self.e_ops = {}
+        for key, lst in self.projectors.items():
+            if self.params['zeeman']:
+                for i, op in enumerate(lst):
+                    for level in levels:
+                        if level.name == key:
+                            M_dec = str(level.M[i])
+                            M_frac = Fraction(M_dec)
+                            M_frac = '{}/{}'.format(M_frac.numerator, M_frac.denominator)
+                            new_key = key + ' $m_J=$' + M_frac
+                    self.e_ops[new_key] = op
+            else:
+                self.e_ops[key] = lst[0]
+        if self.cavity:
+            self.e_ops['n'] = (self.ad*self.a)
+        return self.result, self.e_ops

@@ -62,6 +62,10 @@ class Laser():
             self.S = [0, 0, 1]
         else:
             self.S = S
+            for i in range(2):
+                if self.S[i] > 1:
+                    self.S[i] = 1
+                    
         self.pol = _pol_from_stokes(self.S)
         
 class Decay():
