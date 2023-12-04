@@ -66,8 +66,6 @@ def zeemanFS(J, S, L, B, scaling_factor):
 
 
 def norm(lst):
-    import numpy as np
-
     return np.sqrt(sum([i**2 for i in lst]))
 
 
@@ -76,8 +74,6 @@ def adj(M):
 
 
 def convMatPol(k, B):
-    import numpy as np
-
     # U = convMatPol(k, B) calculates a converion matrix of the spherical basis
     # vectors (= p, 0, m) between the laser's frame and atom's frame.
     # The laser frame is defined by the z-direction given by vector k

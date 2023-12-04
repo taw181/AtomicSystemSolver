@@ -87,6 +87,14 @@ class AtomGui(QMainWindow):
             self.levels.add_level(level)
         for laser in self.system_dict["lasers"]:
             self.lasers.add_laser()
+        self.update()
+
+    def auto_update(self):
+        if self.solver.autoSolveBox.isChecked():
+            self.update()
+
+    def update(self):
+        self.solver.solve_system()
         self.update_diagram()
         self.update_plot()
 
@@ -105,7 +113,6 @@ class AtomGui(QMainWindow):
         )
 
     def update_plot(self):
-        self.solver.solve_system()
         self.plotter.clear()
         self.solver.plot_expect()
 
@@ -245,8 +252,7 @@ class LevelWidget(QFrame):
         self.level_dict["J"] = self.jBox.value()
         self.level_dict["L"] = self.lBox.value()
         self.level_dict["S"] = self.sBox.value()
-        self.main_widget.update_diagram()
-        self.main_widget.update_plot()
+        self.main_widget.auto_update()
 
     def delete_level(self):
         """
@@ -394,8 +400,7 @@ class LaserWidget(QFrame):
         laserpars["S"] = [self.s1Box.value(), self.s2Box.value(), self.s3Box.value()]
 
         self.parent.lasers_list[num].update(laserpars)
-        self.main_widget.update_diagram()
-        self.main_widget.update_plot()
+        self.main_widget.auto_update()
 
     def get_laser_pars(self):
         find_or_add(self.groundBox, self.laser_dict["L1"])
@@ -483,8 +488,7 @@ class CavityWidget(QFrame):
         laserpars["pol"] = [self.s1Box.value(), self.s2Box.value(), self.s3Box.value()]
 
         self.main_widget.system_dict["cavity"].update(laserpars)
-        self.main_widget.update_diagram()
-        self.main_widget.update_plot()
+        self.main_widget.auto_update()
 
     def get_laser_pars(self):
         find_or_add(self.groundBox, self.laser_dict["L1"])
@@ -571,8 +575,7 @@ class ParamsSection(QFrame):
         self.params["Bdir"] = 0
         self.params["zeeman"] = self.zeemanBool.isChecked()
         self.params["mixed"] = self.mixedBool.isChecked()
-        self.main_widget.update_diagram()
-        self.main_widget.update_plot()
+        self.main_widget.auto_update()
 
 
 class SolverWidget(QFrame):
@@ -588,18 +591,26 @@ class SolverWidget(QFrame):
         self.ops_dict = {}
         self.checked_dict = {}
         self.layout = QVBoxLayout()
-        self.layout.addWidget(QLabel("Solver"))
+
+        self.topLayout = QHBoxLayout()
+        self.topLayout.addWidget(QLabel("Solver"))
+
+        self.autoSolveBox = QCheckBox("Auto solve")
+        self.autoSolveBox.setChecked(True)
+        self.topLayout.addWidget(self.autoSolveBox)
+
+        self.layout.addLayout(self.topLayout)
 
         self.buttonsLayout = QHBoxLayout()
         self.printButton = QPushButton("Print")
         self.printButton.clicked.connect(self.print_system)
         self.buttonsLayout.addWidget(self.printButton)
         self.solveButton = QPushButton("Solve System")
-        self.solveButton.clicked.connect(self.solve_system)
+        self.solveButton.clicked.connect(self.main_widget.update)
         self.buttonsLayout.addWidget(self.solveButton)
-        self.plotButton = QPushButton("Plot")
-        self.plotButton.clicked.connect(lambda: self.plot_expect(parent))
-        self.buttonsLayout.addWidget(self.plotButton)
+        # self.plotButton = QPushButton("Plot")
+        # self.plotButton.clicked.connect(lambda: self.plot_expect(parent))
+        # self.buttonsLayout.addWidget(self.plotButton)
         self.layout.addLayout(self.buttonsLayout)
 
         self.ops_grid = QGridLayout()
