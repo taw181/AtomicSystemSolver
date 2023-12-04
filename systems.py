@@ -82,8 +82,19 @@ l1 = {"L1": "g", "L2": "e", "Omega": 1, "Delta": 0.5}
 add_laser(lasers, l1)
 params = default_params
 
-sysdict["TLA"] = {"levels": levels, "lasers": lasers, "params": params}
+sysdict["TLA"] = {"levels": levels, "lasers": lasers, "params": params, "decays": []}
 
+""" TLA with decay """
+TLA_spon = deepcopy(sysdict["TLA"])
+decays = []
+decay = {
+    "L1": "e",
+    "L2": "g",
+    "gamma": 1.0,
+}
+decays.append(decay)
+TLA_spon["decays"] = decays
+sysdict["TLA_spon"] = TLA_spon
 
 """ Lambda """
 levels = {}
@@ -114,6 +125,4 @@ add_laser(lasers, laser)
 
 params = default_params
 
-sysdict["Lambda"] = {"levels": levels, "lasers": lasers, "params": params}
-
-print(sysdict["TLA"])
+sysdict["Lambda"] = {"levels": levels, "lasers": lasers, "params": params, "decays": []}

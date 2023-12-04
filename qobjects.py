@@ -77,7 +77,7 @@ class Decay:
         self.L1 = L1
         self.L2 = L2
         self.name = L1 + L2
-        self.gamma
+        self.gamma = gamma
 
 
 class Cavity:

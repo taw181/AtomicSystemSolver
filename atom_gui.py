@@ -8,7 +8,7 @@ from fractions import Fraction
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout
 from PyQt5.QtWidgets import QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox
 from PyQt5.QtWidgets import QFrame, QMainWindow, QComboBox, QPushButton
-from PyQt5.QtWidgets import QApplication, QGroupBox, QLabel
+from PyQt5.QtWidgets import QApplication, QGroupBox
 from gui_elements import add_framed_widget
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 import qutip as qu
 import qutipfuncs as quf
-from qobjects import Level, Laser
+from qobjects import Level, Laser, Decay
 from system_builder import AtomSystem
 from systems import sysdict
 
@@ -55,6 +55,8 @@ class AtomGui(QMainWindow):
         self.systemLayout.addWidget(self.levels)
         self.lasers = LasersSection(parent=self)
         self.systemLayout.addWidget(self.lasers)
+        self.decays = DecaysSection(parent=self)
+        self.systemLayout.addWidget(self.decays)
         self.paramsWidget = ParamsSection(parent=self)
         self.systemLayout.addWidget(self.paramsWidget)
         self.solver = SolverWidget(parent=self)
@@ -82,11 +84,15 @@ class AtomGui(QMainWindow):
         self.system_dict = copy.deepcopy(sysdict[self.sysName.currentText()])
         self.levels.init_section()
         self.lasers.init_section()
+        self.decays.init_section()
         self.solver.init_section()
         for level in self.system_dict["levels"]:
             self.levels.add_level(level)
         for laser in self.system_dict["lasers"]:
             self.lasers.add_laser()
+        for decay in self.system_dict["decays"]:
+            self.decays.add_decay()
+            print("adding decay")
         self.update()
 
     def auto_update(self):
@@ -101,6 +107,8 @@ class AtomGui(QMainWindow):
     def update_system(self):
         for idx in range(len(self.lasers.lasers_list[:])):
             self.lasers.remove_laser(idx)
+        for idx in range(len(self.decays.decays_list[:])):
+            self.decays.remove_decay(idx)
         for level in list(self.levels.levels_dict.keys()):
             self.levels.remove_level(level)
         self.init_system()
@@ -135,7 +143,7 @@ class AtomGui(QMainWindow):
                 laser.mainFrame.show()
 
 
-class LevelsSection(QFrame):
+class LevelsSection(QGroupBox):
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -143,9 +151,9 @@ class LevelsSection(QFrame):
         self.main_widget = parent
         self.init_section()
 
-        self.setFrameStyle(QFrame.Box)
+        # self.setFrameStyle(QFrame.Box)
         self.layout = QVBoxLayout()
-        self.layout.addWidget(QLabel("Levels"))
+        self.setTitle("Levels")
 
         self.buttonsLayout = QHBoxLayout()
         self.addLevelButton = QPushButton("Add level")
@@ -180,7 +188,6 @@ class LevelsSection(QFrame):
 class LevelWidget(QFrame):
     def __init__(self, name, parent=None):
         super().__init__(parent)
-
         self.name = name
         self.system_dict = parent.system_dict
         self.level_dict = parent.levels_dict[name]
@@ -267,8 +274,54 @@ class LevelWidget(QFrame):
         )  # remove the item widget from the layout again, but different?
         self.deleteLater()  # remove the widget from memory, later ??
 
+class CouplingSection(QGroupBox)
+    def __init__(self, title, dict_key, widget_type, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.main_widget = parent
+        self.setTitle(title)
+        self.init_section()
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
 
-class LasersSection(QFrame):
+    def init_section(self):
+        self.system_dict = self.parent.system_dict
+        self.coupling_list = self.system_dict[dict_key]
+        self.widget_dict = {}
+        self.num_couplings = 0
+
+    def add_laser(self):
+        num = self.num_couplings
+        coupling = widget_type(num=num, parent=self)
+        self.widget_dict[num] = coupling
+        self.layout.addWidget(coupling)
+        # self.get_levels()
+        coupling.get_pars()
+        self.num_couplings += 1
+
+    def get_levels(self):
+        for laser in self.laser_widget_dict.values():
+            laser.groundBox.clear()
+            laser.excitedBox.clear()
+            for key in self.parent.levels.levels_dict.keys():
+                laser.groundBox.addItem(key)
+                laser.excitedBox.addItem(key)
+
+    def remove_widget(self, idx):
+        self.layout.removeWidget(self.widget_dict[idx])
+        self.widget_dict[idx].deleteLater()
+        self.widget_dict.pop(idx)
+        # self.lasers_list.pop(idx)
+
+        
+        
+class CouplingWidget(QFrame)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+
+
+class LasersSection(QGroupBox):
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -277,12 +330,13 @@ class LasersSection(QFrame):
         self.init_section()
 
         self.layout = QVBoxLayout()
-        self.setFrameStyle(QFrame.Box)
-        self.layout.addWidget(QLabel("Lasers"))
+        # self.setFrameStyle(QFrame.Box)
+        # self.layout.addWidget(QLabel("Lasers"))
+        self.setTitle("Lasers")
 
-        self.buttonsLayout = QHBoxLayout()
-        self.getLevelsButton = QPushButton("Get Levels")
-        self.getLevelsButton.clicked.connect(self.get_levels)
+        # self.buttonsLayout = QHBoxLayout()
+        # self.getLevelsButton = QPushButton("Get Levels")
+        # self.getLevelsButton.clicked.connect(self.get_levels)
         # self.buttonsLayout.addWidget(self.getLevelsButton)
 
         self.layout.addLayout(self.buttonsLayout)
@@ -418,9 +472,10 @@ class CavityWidget(QFrame):
         self.setFrameStyle(QFrame.Box)
         self.layout = QVBoxLayout()
         self.parent = parent
-        self.main_widget = parent.main_widget
+        self.main_widget = parent
         self.system_dict = parent.system_dict
         self.cavity_dict = self.system_dict["cavity"]
+        self.init_section()
 
         self.laserMainLayout = QHBoxLayout()
 
@@ -501,7 +556,103 @@ class CavityWidget(QFrame):
         self.s3Box.setValue(self.laser_dict["pol"][2])
 
 
-class ParamsSection(QFrame):
+class DecaysSection(QGroupBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setTitle("Decays")
+        self.layout = QVBoxLayout()
+        self.parent = parent
+        self.main_widget = parent
+        self.system_dict = parent.system_dict
+        self.decay_dict = self.system_dict["decays"]
+        self.setLayout(self.layout)
+
+    def init_section(self):
+        self.system_dict = self.parent.system_dict
+        self.decays_list = self.system_dict["decays"]
+        self.decay_widget_dict = {}
+        self.num_decays = 0
+
+    def add_decay(self):
+        num = self.num_decays
+        decay = DecayWidget(num=num, parent=self)
+        self.decay_widget_dict[num] = decay
+        self.layout.addWidget(decay)
+        # self.get_levels()
+        decay.get_decay_pars()
+        self.num_decays += 1
+
+    def get_levels(self):
+        for laser in self.decaywidget_dict.values():
+            laser.groundBox.clear()
+            laser.excitedBox.clear()
+            for key in self.parent.decays_dict.keys():
+                laser.groundBox.addItem(key)
+                laser.excitedBox.addItem(key)
+
+    def remove_decay(self, idx):
+        self.layout.removeWidget(self.decay_widget_dict[idx])
+        self.decay_widget_dict[idx].deleteLater()
+        self.decay_widget_dict.pop(idx)
+        # self.lasers_list.pop(idx)
+
+
+class DecayWidget(QFrame):
+    def __init__(self, num=0, parent=None):
+        super().__init__(parent)
+        self.num = num
+        self.setFrameStyle(QFrame.Box)
+        self.layout = QVBoxLayout()
+        self.parent = parent
+        self.main_widget = parent.main_widget
+        self.system_dict = parent.system_dict
+        self.decay_dict = self.system_dict["decays"][num]
+        self.num = num
+
+        self.laserMainLayout = QHBoxLayout()
+        self.mainFrame = QFrame()
+        self.mainFrame.setLayout(self.laserMainLayout)
+
+        self.groundBox = add_framed_widget(
+            QComboBox, self.laserMainLayout, label="Lower State"
+        )
+
+        self.excitedBox = add_framed_widget(
+            QComboBox, self.laserMainLayout, label="Upper State"
+        )
+
+        self.gammaBox = add_framed_widget(
+            QDoubleSpinBox, self.laserMainLayout, label="gamma"
+        )
+        self.gammaBox.setSingleStep(0.1)
+        self.gammaBox.setMaximum(100)
+
+        self.layout.addWidget(self.mainFrame)
+
+        self.get_decay_pars()
+
+        self.groundBox.currentIndexChanged.connect(lambda: self.set_decay(num))
+        self.excitedBox.currentIndexChanged.connect(lambda: self.set_decay(num))
+        self.gammaBox.valueChanged.connect(lambda: self.set_decay(num))
+
+        self.setLayout(self.layout)
+
+    def set_decay(self, num):
+        laserpars = {}
+        laserpars["L1"] = self.groundBox.currentText()
+        laserpars["L2"] = self.excitedBox.currentText()
+        laserpars["gamma"] = self.gammaBox.value()
+
+        self.parent.decays_list[num].update(laserpars)
+        self.main_widget.auto_update()
+
+    def get_decay_pars(self):
+        find_or_add(self.groundBox, self.decay_dict["L1"])
+        find_or_add(self.excitedBox, self.decay_dict["L2"])
+        self.gammaBox.setValue(self.decay_dict["gamma"])
+
+
+class ParamsSection(QGroupBox):
     def __init__(
         self,
         parent=None,
@@ -513,7 +664,8 @@ class ParamsSection(QFrame):
         # self.set_params()
 
     def initGUI(self):
-        self.setFrameStyle(QFrame.Box)
+        # self.setFrameStyle(QFrame.Box)
+        self.setTitle("Parameters")
         self.layout = QVBoxLayout()
 
         self.tlistGroup = QGroupBox("tlist")
@@ -553,7 +705,7 @@ class ParamsSection(QFrame):
 
         self.setParamsButton = QPushButton("Set Params")
         self.setParamsButton.clicked.connect(self.set_params)
-        self.layout.addWidget(self.setParamsButton)
+        # self.layout.addWidget(self.setParamsButton)
 
         self.startBox.valueChanged.connect(self.set_params)
         self.endBox.valueChanged.connect(self.set_params)
@@ -578,10 +730,11 @@ class ParamsSection(QFrame):
         self.main_widget.auto_update()
 
 
-class SolverWidget(QFrame):
+class SolverWidget(QGroupBox):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFrameStyle(QFrame.Box)
+        # self.setFrameStyle(QFrame.Box)
+        self.setTitle("Solve and Plot")
         self.parent = parent
         self.main_widget = parent
         self.system_dict = parent.system_dict
@@ -593,7 +746,7 @@ class SolverWidget(QFrame):
         self.layout = QVBoxLayout()
 
         self.topLayout = QHBoxLayout()
-        self.topLayout.addWidget(QLabel("Solver"))
+        # self.topLayout.addWidget(QLabel("Solver"))
 
         self.autoSolveBox = QCheckBox("Auto solve")
         self.autoSolveBox.setChecked(True)
@@ -635,7 +788,10 @@ class SolverWidget(QFrame):
         lasers = []
         for v in system_dict["lasers"]:
             lasers.append(Laser(**v))
-        system = AtomSystem(levels, lasers, system_dict["params"])
+        decays = []
+        for v in system_dict["decays"]:
+            decays.append(Decay(**v))
+        system = AtomSystem(levels, lasers, decays, system_dict["params"])
         return system
 
     def solve_system(self):

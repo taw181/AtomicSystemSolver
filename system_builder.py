@@ -12,11 +12,12 @@ from fractions import Fraction
 
 
 class AtomSystem:
-    def __init__(self, levels, lasers, params, cavity=None):
+    def __init__(self, levels, lasers, decays, params, cavity=None):
         self.params = params
         self.levels = levels
         self.cavity = cavity
         self.lasers = lasers
+        self.decays = decays
         self.result = None
         self.Bdir = [0, 0, 1]
         # self.tlist = np.linspace(0,params['tmax'],params['steps'])
@@ -30,6 +31,7 @@ class AtomSystem:
         #     quf.pol(laser,self.params['Bdir'])
         self._interactions()
         self._hamiltonian()
+        self._decays()
         # self._solve(levels)
 
     def _atom(self):
@@ -164,6 +166,13 @@ class AtomSystem:
         self.H = self.H0 + self.HL + self.HB
         if self.cavity:
             self.H += self.Hc
+            
+    def _decays(self):
+        self.c_ops = []
+        for decay in self.decays:
+            name = decay.name
+            c_op = decay.gamma*sum(self.Aops[name])
+            self.c_ops.append(c_op)
 
     def solve(self):
         tlist = np.linspace(0, self.params["t_max"], self.params["n_step"])
@@ -194,7 +203,10 @@ class AtomSystem:
         # self.c_ops = [C_spon]
         tlist = self.params["tlist"]
         options = qu.Options(store_states=True)
-        self.result = qu.mesolve(self.H, self.rho0, tlist, options=options)
+        if self.c_ops:
+            self.result = qu.mesolve(self.H, self.rho0, tlist, c_ops=self.c_ops, options=options)
+        else:
+            self.result = qu.mesolve(self.H, self.rho0, tlist, options=options)
 
         self.e_ops = {}
         for key, lst in self.projectors.items():
