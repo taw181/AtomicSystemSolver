@@ -1,24 +1,27 @@
 import sys
+import json
 import numpy as np
 import copy
 from fractions import Fraction
+import time
 
-# import markdown2
-
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout
 from PyQt5.QtWidgets import QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox
 from PyQt5.QtWidgets import QFrame, QMainWindow, QComboBox, QPushButton
-from PyQt5.QtWidgets import QApplication, QGroupBox
+from PyQt5.QtWidgets import QApplication, QGroupBox, QScrollArea
 from gui_elements import add_framed_widget
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 
+import matplotlib.lines as lines
+
 import qutip as qu
 import qutipfuncs as quf
-from qobjects import Level, Laser, Decay
+from qobjects import Cavity, Level, Laser, Decay
 from system_builder import AtomSystem
-from systems import sysdict
+from systems import defaults_dict
 
 L_dict = {"S": 0, "P": 1, "D": 2}
 
@@ -30,69 +33,129 @@ class AtomGui(QMainWindow):
         super().__init__(*args, **kwargs)
 
         self.setWindowTitle("Atomic System Solver")
+
         self.mainWidget = QWidget(self)
         self.mainLayout = QHBoxLayout()
 
-        self.systemLayout = QVBoxLayout()
+        self.scrollArea = QScrollArea()
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollArea.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
+        )  # Disable horizontal scrolling
 
+        self.systemWidget = QWidget()
+        self.systemLayout = QVBoxLayout()
+        self.systemWidget.setLayout(self.systemLayout)
+        self.scrollArea.setWidget(self.systemWidget)
+        self.mainLayout.addWidget(self.scrollArea, stretch=1)
         self.initLayout = QHBoxLayout()
 
         self.AMHidden = True
 
-        self.sysName = add_framed_widget(QComboBox, self.initLayout, label="System")
-        for system in sysdict.keys():
-            self.sysName.addItem(system)
-        self.system_dict = copy.deepcopy(sysdict[self.sysName.currentText()])
+        with open("systems.json", "r+") as systems:
+            self.all_systems = json.load(systems)
+        self.systemSelector = add_framed_widget(
+            QComboBox, self.initLayout, label="System"
+        )
+        for system in self.all_systems.keys():
+            self.systemSelector.addItem(system)
+
+        self.system_dict = copy.deepcopy(
+            self.all_systems[self.systemSelector.currentText()]
+        )
 
         self.initButton = add_framed_widget(
-            QPushButton, self.initLayout, label="", args=["Load Settings"]
+            QPushButton, self.initLayout, label="", args=["Load System"]
         )
         self.initButton.clicked.connect(self.update_system)
 
         self.systemLayout.addLayout(self.initLayout)
 
+        self.saveLayout = QHBoxLayout()
+        self.sysName = QLineEdit()
+        self.saveLayout.addWidget(self.sysName)
+        self.saveButton = QPushButton("Save System")
+        self.saveLayout.addWidget(self.saveButton)
+        self.saveButton.clicked.connect(self.save_system)
+
+        self.removeButton = QPushButton("Remove System")
+        self.saveLayout.addWidget(self.removeButton)
+        self.removeButton.clicked.connect(self.remove_system)
+
+        self.systemLayout.addLayout(self.saveLayout)
+
         self.levels = LevelsSection(parent=self)
         self.systemLayout.addWidget(self.levels)
         self.lasers = LasersSection(parent=self)
         self.systemLayout.addWidget(self.lasers)
+        self.cavities = CavitySection(parent=self)
+        self.systemLayout.addWidget(self.cavities)
         self.decays = DecaysSection(parent=self)
         self.systemLayout.addWidget(self.decays)
         self.paramsWidget = ParamsSection(parent=self)
         self.systemLayout.addWidget(self.paramsWidget)
         self.solver = SolverWidget(parent=self)
         self.systemLayout.addWidget(self.solver)
-        self.mainLayout.addLayout(self.systemLayout)
 
         self.plotLayout = QVBoxLayout()
-        self.plotter = PlotWidget()
+        self.plotter = PlotWidget(parent=self)
         self.plotLayout.addWidget(self.plotter)
         self.clearButton = QPushButton("Clear")
         self.clearButton.clicked.connect(self.plotter.clear)
-        self.plotLayout.addWidget(self.clearButton)
+        # self.plotLayout.addWidget(self.clearButton)
         self.levelDiagram = GrotrianDiagram(parent=self)
         self.plotLayout.addWidget(self.levelDiagram)
 
-        self.mainLayout.addLayout(self.plotLayout)
+        self.mainLayout.addLayout(self.plotLayout, stretch=1)
 
         self.mainWidget.setLayout(self.mainLayout)
         self.setCentralWidget(self.mainWidget)
 
-        self.sysName.currentIndexChanged.connect(self.update_system)
+        self.systemSelector.currentIndexChanged.connect(self.update_system)
         self.init_system()
 
+    def save_system(self):
+        newName = self.sysName.text()
+        self.all_systems[newName] = copy.deepcopy(self.system_dict)
+        self.system_dict = self.all_systems[newName]
+        with open("systems.json", "w") as systems:
+            json.dump(self.all_systems, systems, indent=2)
+        self.update_system_list()
+        find_or_add(self.systemSelector, newName)
+
+    def remove_system(self):
+        key = self.sysName.text()
+        self.all_systems.pop(key),
+        with open("systems.json", "w") as systems:
+            json.dump(self.all_systems, systems, indent=2)
+        self.update_system_list()
+
+    def update_system_list(self):
+        self.systemSelector.blockSignals(True)
+        self.systemSelector.clear()
+        for system in self.all_systems.keys():
+            self.systemSelector.addItem(system)
+        self.systemSelector.blockSignals(False)
+
     def init_system(self):
-        self.system_dict = copy.deepcopy(sysdict[self.sysName.currentText()])
+        self.system_dict = copy.deepcopy(
+            self.all_systems[self.systemSelector.currentText()]
+        )
+        self.sysName.setText(self.systemSelector.currentText())
         self.levels.init_section()
         self.lasers.init_section()
+        self.cavities.init_section()
         self.decays.init_section()
         self.solver.init_section()
+        self.plotter.init_section()
         for level in self.system_dict["levels"]:
             self.levels.add_level(level)
         for laser in self.system_dict["lasers"]:
-            self.lasers.add_laser()
+            self.lasers.add_coupling()
         for decay in self.system_dict["decays"]:
-            self.decays.add_decay()
-            print("adding decay")
+            self.decays.add_coupling()
+        for cavity in self.system_dict["cavities"]:
+            self.cavities.add_coupling()
         self.update()
 
     def auto_update(self):
@@ -101,24 +164,29 @@ class AtomGui(QMainWindow):
 
     def update(self):
         self.solver.solve_system()
+        t0 = time.time()
         self.update_diagram()
+        t = time.time() - t0
+        print("Time to update diagram: {}".format(round(t, 5)))
         self.update_plot()
+        t0 = time.time()
+        t = time.time() - t0
+        print("Time to update plot: {}".format(round(t, 5)))
 
     def update_system(self):
-        for idx in range(len(self.lasers.lasers_list[:])):
-            self.lasers.remove_laser(idx)
-        for idx in range(len(self.decays.decays_list[:])):
-            self.decays.remove_decay(idx)
+        for idx in range(len(self.lasers.coupling_list[:])):
+            self.lasers.remove_widget(idx)
+        for idx in range(len(self.decays.coupling_list[:])):
+            self.decays.remove_widget(idx)
+        for idx in range(len(self.cavities.coupling_list[:])):
+            self.cavities.remove_widget(idx)
         for level in list(self.levels.levels_dict.keys()):
             self.levels.remove_level(level)
+
         self.init_system()
 
     def update_diagram(self):
-        self.levelDiagram.plot(
-            self.system_dict["levels"],
-            self.system_dict["lasers"],
-            self.system_dict["params"],
-        )
+        self.levelDiagram.plot(self.system_dict)
 
     def update_plot(self):
         self.plotter.clear()
@@ -130,17 +198,23 @@ class AtomGui(QMainWindow):
             for level in self.levels.levels_widget_dict.values():
                 level.mainFrame.hide()
                 level.AMFrame.show()
-            for laser in self.lasers.laser_widget_dict.values():
+            for laser in self.lasers.widget_dict.values():
                 laser.AMFrame.show()
                 laser.mainFrame.hide()
+            for cavity in self.cavities.widget_dict.values():
+                cavity.AMFrame.show()
+                cavity.mainFrame.hide()
         else:
             self.AMHidden = True
             for level in self.levels.levels_widget_dict.values():
                 level.AMFrame.hide()
                 level.mainFrame.show()
-            for laser in self.lasers.laser_widget_dict.values():
+            for laser in self.lasers.widget_dict.values():
                 laser.AMFrame.hide()
                 laser.mainFrame.show()
+            for cavity in self.cavities.widget_dict.values():
+                cavity.AMFrame.hide()
+                cavity.mainFrame.show()
 
 
 class LevelsSection(QGroupBox):
@@ -157,8 +231,8 @@ class LevelsSection(QGroupBox):
 
         self.buttonsLayout = QHBoxLayout()
         self.addLevelButton = QPushButton("Add level")
-        self.addLevelButton.clicked.connect(lambda: self.addLevel())
-        self.buttonsLayout.addWidget(self.addLevelButton)
+        self.addLevelButton.clicked.connect(lambda: self.add_level())
+        # self.buttonsLayout.addWidget(self.addLevelButton)
 
         self.showAMButton = QPushButton("Toggle AM Settings")
         self.showAMButton.clicked.connect(parent.toggle_am)
@@ -252,10 +326,10 @@ class LevelWidget(QFrame):
         edit_key_in_place(self.system_dict, old_name, new_name)
         self.name = new_name
         pop = self.popBox.text()
-        if pop == "":
-            self.level_dict["pop"] = 0
-        else:
+        try:
             self.level_dict["pop"] = [float(i) for i in pop.split(",")]
+        except Exception:
+            self.level_dict["pop"] = 0
         self.level_dict["J"] = self.jBox.value()
         self.level_dict["L"] = self.lBox.value()
         self.level_dict["S"] = self.sBox.value()
@@ -274,107 +348,65 @@ class LevelWidget(QFrame):
         )  # remove the item widget from the layout again, but different?
         self.deleteLater()  # remove the widget from memory, later ??
 
-class CouplingSection(QGroupBox)
+
+class CouplingSection(QGroupBox):
     def __init__(self, title, dict_key, widget_type, parent=None):
         super().__init__(parent)
-        self.parent = parent
         self.main_widget = parent
         self.setTitle(title)
+        self.dict_key = dict_key
+        self.widget_type = widget_type
         self.init_section()
         self.layout = QVBoxLayout()
+
+        self.couplingsLayout = QVBoxLayout()
+        self.layout.addLayout(self.couplingsLayout)
         self.setLayout(self.layout)
 
+        self.addButton = QPushButton("Add")
+        self.layout.addWidget(self.addButton)
+        self.addButton.clicked.connect(self.add_coupling)
+
     def init_section(self):
-        self.system_dict = self.parent.system_dict
-        self.coupling_list = self.system_dict[dict_key]
+        self.system_dict = self.main_widget.system_dict
+        self.coupling_list = self.system_dict[self.dict_key]
         self.widget_dict = {}
         self.num_couplings = 0
 
-    def add_laser(self):
+    def add_coupling(self):
         num = self.num_couplings
-        coupling = widget_type(num=num, parent=self)
+        if self.max_check():
+            print("Maximum number of {} in use".format(self.dict_key))
+            return
+        if num > len(self.coupling_list) - 1:
+            self.coupling_list.append(copy.deepcopy(defaults_dict[self.dict_key]))
+        coupling = self.widget_type(num, self.dict_key, parent=self)
         self.widget_dict[num] = coupling
-        self.layout.addWidget(coupling)
-        # self.get_levels()
+        self.couplingsLayout.addWidget(coupling)
+        self.get_levels()
         coupling.get_pars()
+
         self.num_couplings += 1
 
     def get_levels(self):
-        for laser in self.laser_widget_dict.values():
-            laser.groundBox.clear()
-            laser.excitedBox.clear()
-            for key in self.parent.levels.levels_dict.keys():
-                laser.groundBox.addItem(key)
-                laser.excitedBox.addItem(key)
+        for laser in self.widget_dict.values():
+            for key in self.main_widget.levels.levels_dict.keys():
+                if laser.groundBox.findText(key) == -1:
+                    laser.groundBox.addItem(key)
+                if laser.excitedBox.findText(key) == -1:
+                    laser.excitedBox.addItem(key)
 
     def remove_widget(self, idx):
-        self.layout.removeWidget(self.widget_dict[idx])
+        self.couplingsLayout.removeWidget(self.widget_dict[idx])
         self.widget_dict[idx].deleteLater()
         self.widget_dict.pop(idx)
-        # self.lasers_list.pop(idx)
 
-        
-        
-class CouplingWidget(QFrame)
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def max_check(self):
+        return False
 
 
-
-class LasersSection(QGroupBox):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.parent = parent
-        self.main_widget = parent
-        self.init_section()
-
-        self.layout = QVBoxLayout()
-        # self.setFrameStyle(QFrame.Box)
-        # self.layout.addWidget(QLabel("Lasers"))
-        self.setTitle("Lasers")
-
-        # self.buttonsLayout = QHBoxLayout()
-        # self.getLevelsButton = QPushButton("Get Levels")
-        # self.getLevelsButton.clicked.connect(self.get_levels)
-        # self.buttonsLayout.addWidget(self.getLevelsButton)
-
-        self.layout.addLayout(self.buttonsLayout)
-
-        self.setLayout(self.layout)
-
-    def init_section(self):
-        self.system_dict = self.parent.system_dict
-        self.lasers_list = self.system_dict["lasers"]
-        self.laser_widget_dict = {}
-        self.num_lasers = 0
-
-    def add_laser(self):
-        num = self.num_lasers
-        laser = LaserWidget(num=num, parent=self)
-        self.laser_widget_dict[num] = laser
-        self.layout.addWidget(laser)
-        # self.get_levels()
-        laser.get_laser_pars()
-        self.num_lasers += 1
-
-    def get_levels(self):
-        for laser in self.laser_widget_dict.values():
-            laser.groundBox.clear()
-            laser.excitedBox.clear()
-            for key in self.parent.levels.levels_dict.keys():
-                laser.groundBox.addItem(key)
-                laser.excitedBox.addItem(key)
-
-    def remove_laser(self, idx):
-        self.layout.removeWidget(self.laser_widget_dict[idx])
-        self.laser_widget_dict[idx].deleteLater()
-        self.laser_widget_dict.pop(idx)
-        # self.lasers_list.pop(idx)
-
-
-class LaserWidget(QFrame):
-    def __init__(self, num=0, parent=None):
+class CouplingWidget(QFrame):
+    def __init__(self, num, key, parent=None):
         super().__init__(parent)
         self.num = num
         self.setFrameStyle(QFrame.Box)
@@ -382,274 +414,299 @@ class LaserWidget(QFrame):
         self.parent = parent
         self.main_widget = parent.main_widget
         self.system_dict = parent.system_dict
-        self.laser_dict = self.system_dict["lasers"][num]
-        self.num = num
+        self.coupling_dict = self.system_dict[key][num]
+        self.main_boxes = []
+        self.AM_boxes = []
 
-        self.laserMainLayout = QHBoxLayout()
+        self.mainLayout = QHBoxLayout()
         self.mainFrame = QFrame()
-        self.mainFrame.setLayout(self.laserMainLayout)
+        self.mainFrame.setLayout(self.mainLayout)
+        self.layout.addWidget(self.mainFrame)
+        self.init_main_boxes()
 
+        self.AMFrame = QFrame()
+        self.AMLayout = QHBoxLayout()
+        self.AMFrame.setLayout(self.AMLayout)
+        self.layout.addWidget(self.AMFrame)
+        self.init_AM_boxes()
+
+        self.init_cavity_boxes()
+
+        self.setLayout(self.layout)
+
+        if not self.system_dict["params"]["zeeman"]:
+            self.AMFrame.hide()
+
+        self.get_pars()
+        self.init_connections()
+
+    def init_main_boxes(self):
+        pass
+
+    def init_cavity_boxes(self):
+        pass
+
+    def init_AM_boxes(self):
+        pass
+
+    def init_connections(self):
+        for box in self.main_boxes + self.AM_boxes:
+            box.valueChanged.connect(lambda val: self.set_values())
+
+    def set_values(self, key, val):
+        coupling_dict = self.coupling_dict
+        if key in ("N", "n"):
+            maxval = self.NBox.value() - 1
+            self.nBox.setMaximum(maxval)
+            if self.nBox.value() > maxval:
+                self.nBox.setValue(maxval)
+        if key in ("s1", "s2", "s3"):
+            coupling_dict["S"] = [
+                self.s1Box.value(),
+                self.s2Box.value(),
+                self.s3Box.value(),
+            ]
+        elif key in ("p1", "p2", "p3"):
+            coupling_dict["pol"] = [
+                self.polBox.value(),
+                self.polBox.value(),
+                self.polBox.value(),
+            ]
+        elif key in ("L1", "L2"):
+            level_names = self.main_widget.system_dict["levels"].keys()
+            if (self.groundBox.currentText() not in level_names) or (
+                self.excitedBox.currentText() not in level_names
+            ):
+                print("bad level name")
+                return
+            else:
+                coupling_dict["L1"] = self.groundBox.currentText()
+                coupling_dict["L2"] = self.excitedBox.currentText()
+            print(self.main_widget.system_dict["levels"].keys())
+            # coupling_dict["L1"] = self.groundBox.currentText()
+            # coupling_dict["L2"] = self.excitedBox.currentText()
+        else:
+            coupling_dict[key] = val
+        print(self.main_widget.system_dict)
+        self.main_widget.auto_update()
+
+    def get_pars(self):
+        pass
+
+    def set_level_boxes(self):
+        level_names = list(self.main_widget.system_dict["levels"].keys())
+        print(level_names)
+        if self.coupling_dict["L1"] in level_names:
+            print("lower level {} found".format(self.coupling_dict["L1"]))
+            find_or_add(self.groundBox, self.coupling_dict["L1"])
+        else:
+            find_or_add(self.groundBox, level_names[0])
+            self.coupling_dict["L1"] = level_names[0]
+        if self.coupling_dict["L2"] in level_names:
+            find_or_add(self.excitedBox, self.coupling_dict["L2"])
+            print("upper level {} found".format(self.coupling_dict["L2"]))
+        else:
+            print("upper level {} not found".format(self.coupling_dict["L2"]))
+            find_or_add(self.excitedBox, level_names[1])
+            self.coupling_dict["L2"] = level_names[1]
+
+
+class LasersSection(CouplingSection):
+    def __init__(self, parent=None):
+        super().__init__("Lasers", "lasers", LaserWidget, parent=parent)
+
+    def max_check(self):
+        if self.num_couplings > len(self.system_dict["levels"]) - 2:
+            return True
+        else:
+            return False
+
+
+class LaserWidget(CouplingWidget):
+    def __init__(self, num, key, parent=None):
+        super().__init__(num, key, parent=parent)
+
+    def init_main_boxes(self):
         self.groundBox = add_framed_widget(
-            QComboBox, self.laserMainLayout, label="Lower State"
+            QComboBox, self.mainLayout, label="Lower State"
         )
 
         self.excitedBox = add_framed_widget(
-            QComboBox, self.laserMainLayout, label="Upper State"
+            QComboBox, self.mainLayout, label="Upper State"
         )
 
         self.omegaBox = add_framed_widget(
-            QDoubleSpinBox, self.laserMainLayout, label="Omega"
+            QDoubleSpinBox, self.mainLayout, label="Omega"
         )
         self.omegaBox.setSingleStep(0.1)
         self.omegaBox.setMaximum(100)
         self.deltaBox = add_framed_widget(
-            QDoubleSpinBox, self.laserMainLayout, label="Delta"
+            QDoubleSpinBox, self.mainLayout, label="Delta"
         )
         self.deltaBox.setSingleStep(0.1)
         self.deltaBox.setMaximum(100)
         self.deltaBox.setMinimum(-100)
 
-        self.layout.addWidget(self.mainFrame)
-
-        self.AMFrame = QFrame()
-        self.laserDirLayout = QHBoxLayout()
-
-        self.kBox = add_framed_widget(QSpinBox, self.laserDirLayout, label="k")
+    def init_AM_boxes(self):
+        self.kBox = add_framed_widget(QSpinBox, self.AMLayout, label="k")
         self.kBox.setMaximum(360)
 
-        self.s1Box = add_framed_widget(QSpinBox, self.laserDirLayout, label="S")
-        self.s2Box = add_framed_widget(QSpinBox, self.laserDirLayout)
-        self.s3Box = add_framed_widget(QSpinBox, self.laserDirLayout)
+        self.s1Box = add_framed_widget(QDoubleSpinBox, self.AMLayout, label="S1")
+        self.s2Box = add_framed_widget(QDoubleSpinBox, self.AMLayout, label="S2")
+        self.s3Box = add_framed_widget(QDoubleSpinBox, self.AMLayout, label="S3")
 
-        self.get_laser_pars()
+        for box in [self.s1Box, self.s2Box, self.s3Box]:
+            box.setMinimum(-1.0)
+            box.setMaximum(1.0)
+            box.setSingleStep(0.1)
 
-        self.groundBox.currentIndexChanged.connect(lambda: self.set_laser(num))
-        self.excitedBox.currentIndexChanged.connect(lambda: self.set_laser(num))
-        self.omegaBox.valueChanged.connect(lambda: self.set_laser(num))
-        self.deltaBox.valueChanged.connect(lambda: self.set_laser(num))
-        self.kBox.valueChanged.connect(lambda: self.set_laser(num))
+    def init_connections(self):
+        self.groundBox.currentTextChanged.connect(
+            lambda val: self.set_values("L1", val)
+        )
+        self.excitedBox.currentTextChanged.connect(
+            lambda val: self.set_values("L2", val)
+        )
+        self.omegaBox.valueChanged.connect(lambda val: self.set_values("Omega", val))
+        self.deltaBox.valueChanged.connect(lambda val: self.set_values("Delta", val))
 
-        self.s1Box.valueChanged.connect(lambda: self.set_laser(num))
-        self.s2Box.valueChanged.connect(lambda: self.set_laser(num))
-        self.s3Box.valueChanged.connect(lambda: self.set_laser(num))
+        self.kBox.valueChanged.connect(lambda val: self.set_values("k", val))
+        self.s1Box.valueChanged.connect(lambda val: self.set_values("s1", val))
+        self.s2Box.valueChanged.connect(lambda val: self.set_values("s2", val))
+        self.s3Box.valueChanged.connect(lambda val: self.set_values("s3", val))
 
-        self.AMFrame.setLayout(self.laserDirLayout)
-        self.layout.addWidget(self.AMFrame)
-        if not self.system_dict["params"]["zeeman"]:
-            self.AMFrame.hide()
-
-        # self.set_laserButton = QPushButton('Set Laser')
-        # self.set_laserButton.clicked.connect(lambda: self.set_laser(num, parent))
-        # self.layout.addWidget(self.set_laserButton)
-
-        self.setLayout(self.layout)
-
-    def set_laser(self, num):
-        laserpars = {}
-        laserpars["L1"] = self.groundBox.currentText()
-        laserpars["L2"] = self.excitedBox.currentText()
-        laserpars["Omega"] = self.omegaBox.value()
-        laserpars["Delta"] = self.deltaBox.value()
-        laserpars["k"] = self.kBox.value()
-        laserpars["S"] = [self.s1Box.value(), self.s2Box.value(), self.s3Box.value()]
-
-        self.parent.lasers_list[num].update(laserpars)
-        self.main_widget.auto_update()
-
-    def get_laser_pars(self):
-        find_or_add(self.groundBox, self.laser_dict["L1"])
-        find_or_add(self.excitedBox, self.laser_dict["L2"])
-        self.omegaBox.setValue(self.laser_dict["Omega"])
-        self.deltaBox.setValue(self.laser_dict["Delta"])
-        self.s1Box.setValue(self.laser_dict["S"][0])
-        self.s2Box.setValue(self.laser_dict["S"][1])
-        self.s3Box.setValue(self.laser_dict["S"][2])
+    def get_pars(self):
+        self.set_level_boxes()
+        self.omegaBox.setValue(self.coupling_dict["Omega"])
+        self.deltaBox.setValue(self.coupling_dict["Delta"])
+        self.kBox.setValue(self.coupling_dict["k"])
+        self.s1Box.setValue(self.coupling_dict["S"][0])
+        self.s2Box.setValue(self.coupling_dict["S"][1])
+        self.s3Box.setValue(self.coupling_dict["S"][2])
 
 
-class CavityWidget(QFrame):
+class CavitySection(CouplingSection):
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFrameStyle(QFrame.Box)
-        self.layout = QVBoxLayout()
-        self.parent = parent
-        self.main_widget = parent
-        self.system_dict = parent.system_dict
-        self.cavity_dict = self.system_dict["cavity"]
-        self.init_section()
+        super().__init__("Cavities", "cavities", CavityWidget, parent=parent)
 
-        self.laserMainLayout = QHBoxLayout()
+    def max_check(self):
+        if len(self.widget_dict) > 0:
+            return True
+        else:
+            return False
 
+
+class CavityWidget(CouplingWidget):
+    def __init__(self, num, key, parent=None):
+        super().__init__(num, key, parent=parent)
+
+    def init_main_boxes(self):
         self.groundBox = add_framed_widget(
-            QComboBox, self.laserMainLayout, label="Lower State"
+            QComboBox, self.mainLayout, label="Lower State"
         )
 
         self.excitedBox = add_framed_widget(
-            QComboBox, self.laserMainLayout, label="Upper State"
+            QComboBox, self.mainLayout, label="Upper State"
         )
 
-        self.gBox = add_framed_widget(
-            QDoubleSpinBox, self.laserMainLayout, label="Omega"
-        )
+        self.gBox = add_framed_widget(QDoubleSpinBox, self.mainLayout, label="g")
         self.gBox.setSingleStep(0.1)
         self.gBox.setMaximum(100)
         self.deltaBox = add_framed_widget(
-            QDoubleSpinBox, self.laserMainLayout, label="Delta"
+            QDoubleSpinBox, self.mainLayout, label="Delta"
         )
         self.deltaBox.setSingleStep(0.1)
         self.deltaBox.setMaximum(100)
         self.deltaBox.setMinimum(-100)
-        self.layout.addLayout(self.laserMainLayout)
 
-        self.AMFrame = QFrame()
-        self.laserDirLayout = QHBoxLayout()
+    def init_cavity_boxes(self):
+        self.cavityNLayout = QHBoxLayout()
+        self.NBox = add_framed_widget(QSpinBox, self.mainLayout, label="Photon cutoff")
 
-        self.kBox = add_framed_widget(QSpinBox, self.laserDirLayout, label="k")
+        self.nBox = add_framed_widget(QSpinBox, self.mainLayout, label="Initial n")
+        self.kappaBox = add_framed_widget(
+            QDoubleSpinBox, self.mainLayout, label="kappa"
+        )
+        self.layout.addLayout(self.mainLayout)
+
+    def init_AM_boxes(self):
+        self.kBox = add_framed_widget(QSpinBox, self.AMLayout, label="k")
         self.kBox.setMaximum(360)
 
-        self.s1Box = add_framed_widget(QSpinBox, self.laserDirLayout, label="pol")
-        self.s2Box = add_framed_widget(QSpinBox, self.laserDirLayout)
-        self.s3Box = add_framed_widget(QSpinBox, self.laserDirLayout)
+        self.p1Box = add_framed_widget(QSpinBox, self.AMLayout, label="pol")
+        self.p2Box = add_framed_widget(QSpinBox, self.AMLayout)
+        self.p3Box = add_framed_widget(QSpinBox, self.AMLayout)
 
-        self.get_laser_pars()
+    def init_connections(self):
+        self.groundBox.currentTextChanged.connect(
+            lambda val: self.set_values("L1", val)
+        )
+        self.excitedBox.currentTextChanged.connect(
+            lambda val: self.set_values("L2", val)
+        )
+        self.gBox.valueChanged.connect(lambda val: self.set_values("g", val))
+        self.deltaBox.valueChanged.connect(lambda val: self.set_values("Delta", val))
+        self.kappaBox.valueChanged.connect(lambda val: self.set_values("kappa", val))
+        self.NBox.valueChanged.connect(lambda val: self.set_values("N", val))
+        self.nBox.valueChanged.connect(lambda val: self.set_values("n", val))
 
-        self.groundBox.currentIndexChanged.connect(lambda: self.set_laser)
-        self.excitedBox.currentIndexChanged.connect(lambda: self.set_laser)
-        self.omegaBox.valueChanged.connect(lambda: self.set_laser)
-        self.deltaBox.valueChanged.connect(lambda: self.set_laser)
-        self.kBox.valueChanged.connect(lambda: self.set_laser)
+        self.kBox.valueChanged.connect(lambda val: self.set_values("k", val))
+        self.p1Box.valueChanged.connect(lambda val: self.set_values("p1", val))
+        self.p2Box.valueChanged.connect(lambda val: self.set_values("p2", val))
+        self.p3Box.valueChanged.connect(lambda val: self.set_values("p3", val))
 
-        self.s1Box.valueChanged.connect(lambda: self.set_laser)
-        self.s2Box.valueChanged.connect(lambda: self.set_laser)
-        self.s3Box.valueChanged.connect(lambda: self.set_laser)
-
-        self.AMFrame.setLayout(self.laserDirLayout)
-        self.layout.addWidget(self.AMFrame)
-        if not self.system_dict["params"]["zeeman"]:
-            self.AMFrame.hide()
-
-        # self.set_laserButton = QPushButton('Set Laser')
-        # self.set_laserButton.clicked.connect(lambda: self.set_laser(num, parent))
-        # self.layout.addWidget(self.set_laserButton)
-
-        self.setLayout(self.layout)
-
-    def set_laser(self):
-        laserpars = {}
-        laserpars["L1"] = self.groundBox.currentText()
-        laserpars["L2"] = self.excitedBox.currentText()
-        laserpars["g"] = self.omegaBox.value()
-        laserpars["Delta"] = self.deltaBox.value()
-        laserpars["k"] = self.kBox.value()
-        laserpars["pol"] = [self.s1Box.value(), self.s2Box.value(), self.s3Box.value()]
-
-        self.main_widget.system_dict["cavity"].update(laserpars)
-        self.main_widget.auto_update()
-
-    def get_laser_pars(self):
-        find_or_add(self.groundBox, self.laser_dict["L1"])
-        find_or_add(self.excitedBox, self.laser_dict["L2"])
-        self.omegaBox.setValue(self.laser_dict["g"])
-        self.deltaBox.setValue(self.laser_dict["Delta"])
-        self.kBox.setValue(self.laser_dict["k"])
-        self.s1Box.setValue(self.laser_dict["pol"][0])
-        self.s2Box.setValue(self.laser_dict["pol"][1])
-        self.s3Box.setValue(self.laser_dict["pol"][2])
+    def get_pars(self):
+        self.set_level_boxes()
+        self.gBox.setValue(self.coupling_dict["g"])
+        self.deltaBox.setValue(self.coupling_dict["Delta"])
+        self.kappaBox.setValue(self.coupling_dict["kappa"])
+        self.NBox.setValue(self.coupling_dict["N"])
+        self.nBox.setValue(self.coupling_dict["n"])
+        self.kBox.setValue(self.coupling_dict["k"])
+        self.p1Box.setValue(self.coupling_dict["pol"][0])
+        self.p2Box.setValue(self.coupling_dict["pol"][1])
+        self.p3Box.setValue(self.coupling_dict["pol"][2])
 
 
-class DecaysSection(QGroupBox):
+class DecaysSection(CouplingSection):
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setTitle("Decays")
-        self.layout = QVBoxLayout()
-        self.parent = parent
-        self.main_widget = parent
-        self.system_dict = parent.system_dict
-        self.decay_dict = self.system_dict["decays"]
-        self.setLayout(self.layout)
+        super().__init__("Decays", "decays", DecayWidget, parent=parent)
 
-    def init_section(self):
-        self.system_dict = self.parent.system_dict
-        self.decays_list = self.system_dict["decays"]
-        self.decay_widget_dict = {}
-        self.num_decays = 0
-
-    def add_decay(self):
-        num = self.num_decays
-        decay = DecayWidget(num=num, parent=self)
-        self.decay_widget_dict[num] = decay
-        self.layout.addWidget(decay)
-        # self.get_levels()
-        decay.get_decay_pars()
-        self.num_decays += 1
-
-    def get_levels(self):
-        for laser in self.decaywidget_dict.values():
-            laser.groundBox.clear()
-            laser.excitedBox.clear()
-            for key in self.parent.decays_dict.keys():
-                laser.groundBox.addItem(key)
-                laser.excitedBox.addItem(key)
-
-    def remove_decay(self, idx):
-        self.layout.removeWidget(self.decay_widget_dict[idx])
-        self.decay_widget_dict[idx].deleteLater()
-        self.decay_widget_dict.pop(idx)
-        # self.lasers_list.pop(idx)
+    def max_check(self):
+        return False
 
 
-class DecayWidget(QFrame):
-    def __init__(self, num=0, parent=None):
-        super().__init__(parent)
-        self.num = num
-        self.setFrameStyle(QFrame.Box)
-        self.layout = QVBoxLayout()
-        self.parent = parent
-        self.main_widget = parent.main_widget
-        self.system_dict = parent.system_dict
-        self.decay_dict = self.system_dict["decays"][num]
-        self.num = num
+class DecayWidget(CouplingWidget):
+    def __init__(self, num, key, parent=None):
+        super().__init__(num, key, parent=parent)
 
-        self.laserMainLayout = QHBoxLayout()
-        self.mainFrame = QFrame()
-        self.mainFrame.setLayout(self.laserMainLayout)
-
+    def init_main_boxes(self):
         self.groundBox = add_framed_widget(
-            QComboBox, self.laserMainLayout, label="Lower State"
+            QComboBox, self.mainLayout, label="Lower State"
         )
 
         self.excitedBox = add_framed_widget(
-            QComboBox, self.laserMainLayout, label="Upper State"
+            QComboBox, self.mainLayout, label="Upper State"
         )
 
         self.gammaBox = add_framed_widget(
-            QDoubleSpinBox, self.laserMainLayout, label="gamma"
+            QDoubleSpinBox, self.mainLayout, label="gamma"
         )
         self.gammaBox.setSingleStep(0.1)
         self.gammaBox.setMaximum(100)
 
-        self.layout.addWidget(self.mainFrame)
+    def init_connections(self):
+        self.groundBox.currentTextChanged.connect(
+            lambda val: self.set_values("L1", val)
+        )
+        self.excitedBox.currentTextChanged.connect(
+            lambda val: self.set_values("L2", val)
+        )
+        self.gammaBox.valueChanged.connect(lambda val: self.set_values("gamma", val))
 
-        self.get_decay_pars()
-
-        self.groundBox.currentIndexChanged.connect(lambda: self.set_decay(num))
-        self.excitedBox.currentIndexChanged.connect(lambda: self.set_decay(num))
-        self.gammaBox.valueChanged.connect(lambda: self.set_decay(num))
-
-        self.setLayout(self.layout)
-
-    def set_decay(self, num):
-        laserpars = {}
-        laserpars["L1"] = self.groundBox.currentText()
-        laserpars["L2"] = self.excitedBox.currentText()
-        laserpars["gamma"] = self.gammaBox.value()
-
-        self.parent.decays_list[num].update(laserpars)
-        self.main_widget.auto_update()
-
-    def get_decay_pars(self):
-        find_or_add(self.groundBox, self.decay_dict["L1"])
-        find_or_add(self.excitedBox, self.decay_dict["L2"])
-        self.gammaBox.setValue(self.decay_dict["gamma"])
+    def get_pars(self):
+        self.set_level_boxes()
+        self.gammaBox.setValue(self.coupling_dict["gamma"])
 
 
 class ParamsSection(QGroupBox):
@@ -718,10 +775,9 @@ class ParamsSection(QGroupBox):
 
     def set_params(self):
         self.params = self.main_widget.system_dict["params"]
-        t_start = self.startBox.value()
-        t_max = self.endBox.value()
-        n_step = self.stepsBox.value()
-        self.params["tlist"] = np.linspace(t_start, t_max, n_step)
+        self.params["t_start"] = self.startBox.value()
+        self.params["t_max"] = self.endBox.value()
+        self.params["n_step"] = self.stepsBox.value()
 
         self.params["B"] = self.bBox.value()
         self.params["Bdir"] = 0
@@ -739,18 +795,17 @@ class SolverWidget(QGroupBox):
         self.main_widget = parent
         self.system_dict = parent.system_dict
         self.levels_dict = parent.levels.levels_dict
-        self.lasers_list = parent.lasers.lasers_list
+        self.coupling_list = parent.lasers.coupling_list
         self.params = parent.paramsWidget.params
-        self.ops_dict = {}
-        self.checked_dict = {}
-        self.layout = QVBoxLayout()
+        self.layout = QHBoxLayout()
+        self.exp_dict = {}
 
         self.topLayout = QHBoxLayout()
         # self.topLayout.addWidget(QLabel("Solver"))
 
         self.autoSolveBox = QCheckBox("Auto solve")
         self.autoSolveBox.setChecked(True)
-        self.topLayout.addWidget(self.autoSolveBox)
+        self.layout.addWidget(self.autoSolveBox)
 
         self.layout.addLayout(self.topLayout)
 
@@ -761,13 +816,8 @@ class SolverWidget(QGroupBox):
         self.solveButton = QPushButton("Solve System")
         self.solveButton.clicked.connect(self.main_widget.update)
         self.buttonsLayout.addWidget(self.solveButton)
-        # self.plotButton = QPushButton("Plot")
-        # self.plotButton.clicked.connect(lambda: self.plot_expect(parent))
-        # self.buttonsLayout.addWidget(self.plotButton)
-        self.layout.addLayout(self.buttonsLayout)
 
-        self.ops_grid = QGridLayout()
-        self.layout.addLayout(self.ops_grid)
+        self.layout.addLayout(self.buttonsLayout)
 
         self.setLayout(self.layout)
 
@@ -791,61 +841,68 @@ class SolverWidget(QGroupBox):
         decays = []
         for v in system_dict["decays"]:
             decays.append(Decay(**v))
-        system = AtomSystem(levels, lasers, decays, system_dict["params"])
-        return system
+        cavities = [None]
+        for v in system_dict["cavities"]:
+            cavities = [Cavity(**v)]
+        try:
+            atom_system = AtomSystem(
+                levels, lasers, decays, system_dict["params"], cavity=cavities[0]
+            )
+            return atom_system
+        except Exception as e:
+            print("Failed to build system")
+            print(e)
 
     def solve_system(self):
-        self.system_dict = self.parent.system_dict
-        system = self.build_system(self.system_dict)
-        self.result, self.e_ops = system.solve()
-        for key, widget in (self.ops_dict.copy()).items():
-            self.ops_grid.removeWidget(widget)
-            self.ops_dict.pop(key)
-            # self.checked_dict.pop(key)
-        for key, op in self.e_ops.items():
-            row, col = divmod(self.ops_grid.count(), 4)
-            # key_html = markdown2.markdown(key)
-            widget = QCheckBox(key)
-            self.ops_dict[key] = widget
-            if key in self.checked_dict.keys():
-                widget.setChecked(self.checked_dict[key])
-            else:
-                self.checked_dict[key] = True
-                widget.setChecked(True)
-            widget.stateChanged.connect(self.update_checked_dict)
-            self.ops_grid.addWidget(widget, row, col)
-
-    def update_checked_dict(self):
-        for key in self.ops_dict.keys():
-            self.checked_dict[key] = (self.ops_dict[key]).isChecked()
+        try:
+            self.system_dict = self.parent.system_dict
+            system = self.build_system(self.system_dict)
+            self.result, self.e_ops = system.solve()
+            self.main_widget.plotter.set_e_ops(self.e_ops)
+        except Exception as e:
+            print("Failed to solve system")
+            print(e)
 
     def plot_expect(self):
+        self.main_widget.plotter.set_e_ops(self.e_ops)
+        params = self.main_widget.system_dict["params"]
         for key, op in self.e_ops.items():
-            if self.ops_dict[key].isChecked():
+            if self.main_widget.plotter.ops_dict[key].isChecked():
                 exp = qu.expect(op, self.result.states)
-                self.parent.plotter.plot(
-                    self.system_dict["params"]["tlist"], exp, label=key
+                self.exp_dict[key] = exp
+                tlist = np.linspace(
+                    params["t_start"], params["t_max"], params["n_step"]
                 )
+                self.parent.plotter.plot(tlist, exp, label=key)
+        self.tlist = tlist
 
     def init_section(self):
-        for key, widget in (self.ops_dict.copy()).items():
-            self.ops_grid.removeWidget(widget)
-            self.ops_dict.pop(key)
-            self.checked_dict.pop(key)
+        pass
 
 
 class PlotWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.ops_dict = {}
+        self.checked_dict = {}
+        self.tlist = []
+        self.main_widget = parent
         self.figure, self.ax = plt.subplots()
         self.canvas = FigureCanvas(self.figure)
         self.ax.set_xlabel("Time")
         self.ax.set_ylabel("Expectation Value")
 
-        layout = QVBoxLayout()
-        layout.addWidget(self.canvas)
-        self.setLayout(layout)
+        self.layout = QVBoxLayout()
+        self.layout.addWidget(self.canvas)
+
+        self.ops_grid = QGridLayout()
+        self.layout.addLayout(self.ops_grid)
+
+        self.animationButton = QPushButton("Animation")
+        self.animationButton.clicked.connect(self.run_animation)
+        self.layout.addWidget(self.animationButton)
+
+        self.setLayout(self.layout)
 
     def plot(self, *args, **kwargs):
         self.ax.plot(*args, **kwargs)
@@ -855,6 +912,58 @@ class PlotWidget(QWidget):
     def clear(self):
         self.ax.clear()
         self.canvas.draw()
+
+    def set_e_ops(self, e_ops):
+        for key, widget in (self.ops_dict.copy()).items():
+            self.ops_grid.removeWidget(widget)
+            self.ops_dict.pop(key)
+        for key, op in e_ops.items():
+            row, col = divmod(self.ops_grid.count(), 4)
+            # key_html = markdown2.markdown(key)
+            widget = QCheckBox(key)
+            # widget = htmlCheckBox(key)
+            self.ops_dict[key] = widget
+            if key in self.checked_dict.keys():
+                widget.setChecked(self.checked_dict[key])
+            else:
+                self.checked_dict[key] = True
+                widget.setChecked(True)
+            widget.stateChanged.connect(self.update_checked_dict)
+            self.ops_grid.addWidget(widget, row, col)
+
+    def init_section(self):
+        for key, widget in (self.ops_dict.copy()).items():
+            self.ops_grid.removeWidget(widget)
+            self.ops_dict.pop(key)
+            self.checked_dict.pop(key)
+
+    def update_checked_dict(self):
+        for key in self.ops_dict.keys():
+            self.checked_dict[key] = (self.ops_dict[key]).isChecked()
+
+    def run_animation(self):
+        diagram = self.main_widget.levelDiagram
+        params = self.main_widget.system_dict["params"]
+        tlist = np.linspace(0, params["t_max"], params["n_step"])
+        for i, t in enumerate(tlist):
+            vline = self.ax.vlines(t, 0, 1)
+            self.canvas.draw()
+            for key, point in diagram.level_points.items():
+                point[0].set_alpha(self.main_widget.solver.exp_dict[key][i])
+            if diagram.cavity_mode:
+                n_list = self.main_widget.solver.exp_dict["n"]
+                n_norm = n_list / max(n_list)
+                diagram.cavity_mode.set_alpha(min((n_norm[i], 1)))
+            diagram.canvas.draw()
+            QApplication.processEvents()
+            time.sleep(2.5 / len(tlist))
+            vline.remove()
+        self.canvas.draw()
+        for point in diagram.level_points.values():
+            point[0].set_alpha(0)
+        if diagram.cavity_mode:
+            diagram.cavity_mode.set_alpha(0)
+        diagram.canvas.draw()
 
 
 class GrotrianDiagram(QWidget):
@@ -875,7 +984,16 @@ class GrotrianDiagram(QWidget):
 
         self.setLayout(self.layout)
 
-    def plot(self, levels, lasers, params):
+    def plot(self, system_dict):
+        levels = system_dict["levels"]
+        lasers = system_dict["lasers"]
+        decays = system_dict["decays"]
+        params = system_dict["params"]
+        cavities = system_dict["cavities"]
+
+        self.level_points = {}
+        self.cavity_mode = None
+
         self.ax.clear()
         zeeman = params["zeeman"]
         for key in levels.keys():
@@ -883,73 +1001,153 @@ class GrotrianDiagram(QWidget):
             S = level["S"]
             L = level["L"]
             J = level["J"]
-            if L == 1:
-                energy = 2
-            elif L == 2:
-                energy = 1
+            energy = level["energy"]
+
+            if len(levels.keys()) == 2:
+                level_centre = 1
             else:
-                energy = 0
-            am_min = L - 0.2
-            am_max = L + 0.2
+                level_centre = L
+
+            level_width = 0.6
+            am_min = level_centre - level_width / 2
+            am_max = level_centre + level_width / 2
             if J != 0:
                 J_dec = str(J)
                 J_frac = Fraction(J_dec)
                 J_frac = "{}/{}".format(J_frac.numerator, J_frac.denominator)
             else:
                 J_frac = J
-            label = "$^{{{}}}{}_{{{}}}$".format(int(2 * S + 1), L_dict_inv[L], J_frac)
-            if not zeeman:
+            if zeeman:
+                label = "$^{{{}}}{}_{{{}}}$".format(
+                    int(2 * S + 1), L_dict_inv[L], J_frac
+                )
+            else:
+                label = level["name"]
+            if not zeeman or J == 0:
                 self.ax.hlines(y=energy, xmin=am_min, xmax=am_max)
+                point = self.ax.plot(
+                    level_centre,
+                    energy,
+                    marker="o",
+                    markersize=10,
+                    color="red",
+                    alpha=0,
+                )
+                self.level_points[key] = point
             self.ax.text(am_max, energy, label)
 
             if zeeman and J != 0:
-                w = quf.zeemanFS(J, S, L, 1e-4, 1)
+                w = quf.zeemanFS(J, S, L, 1e-4, params["freq_scaling"])
                 N = int(2 * J + 1)
                 M = np.arange(-J, J + 1)
                 B = params["B"]
-                full_length = 0.4
-                m_length = full_length / N
+                m_length = level_width / N
                 for i, m in enumerate(M):
-                    shift = w * B * m * 1e-9
+                    shift = w * B * m
                     start = am_min + i * m_length
                     stop = am_min + (i + 1) * m_length
-                    self.ax.hlines(y=energy + shift, xmin=start, xmax=stop)
+                    y = energy + shift
+                    self.ax.hlines(y=y, xmin=start, xmax=stop)
+                    M_dec = str(m)
+                    M_frac = Fraction(M_dec)
+                    M_frac = "{}/{}".format(M_frac.numerator, M_frac.denominator)
+                    new_key = key + " $m_J=$" + M_frac
+                    point = self.ax.plot(
+                        (start + stop) / 2,
+                        y,
+                        marker="o",
+                        markersize=5,
+                        color="red",
+                        alpha=0,
+                    )
+                    self.level_points[new_key] = point
 
         for laser in lasers:
             Omega = laser["Omega"]
+            if Omega == 0:
+                continue
             Delta = laser["Delta"]
 
-            x1 = levels[laser["L1"]]["L"]
-            x2 = levels[laser["L2"]]["L"]
+            if len(levels.keys()) == 2:
+                x1 = 1
+                x2 = 1
+            else:
+                x1 = levels[laser["L1"]]["L"]
+                x2 = levels[laser["L2"]]["L"]
+
             dx = x2 - x1
 
-            L = levels[laser["L1"]]["L"]
-            if L == 1:
-                energy = 2
-            elif L == 2:
-                energy = 1
-            else:
-                energy = 0
-            y1 = energy
-            L = levels[laser["L2"]]["L"]
-            if L == 1:
-                energy = 2
-            elif L == 2:
-                energy = 1
-            else:
-                energy = 0
-            y2 = energy - Delta / 10
+            y1 = levels[laser["L1"]]["energy"]
+            energy_2 = levels[laser["L2"]]["energy"]
+            y2 = energy_2 - Delta / 10
             dy = y2 - y1
 
             label = "$\Omega={}$,\n$\Delta={}$".format(round(Omega, 3), round(Delta, 3))
             alpha = min([Omega, 1])
             self.ax.arrow(
-                x1, y1, dx, dy, width=0.01, length_includes_head=True, alpha=alpha
+                x1 - 0.1, y1, dx, dy, width=0.02, length_includes_head=True, alpha=alpha
             )
-            self.ax.text(0.1 + x1 + dx / 2, y1 + dy / 2, label)
+            self.ax.text(x1 + dx / 1.5 - 0.5, y1 + dy / 1.5, label)
 
             if Delta != 0:
-                self.ax.hlines(y=y2, xmin=x2 - 0.2, xmax=x2 + 0.2, linestyle="dashed")
+                self.ax.hlines(
+                    y=y2,
+                    xmin=x2 - level_width / 2,
+                    xmax=x2 + level_width / 2,
+                    linestyle="dashed",
+                )
+
+        for decay in decays:
+            Gamma = decay["gamma"]
+            if len(levels.keys()) == 2:
+                x1 = 1
+                x2 = 1
+            else:
+                x1 = levels[laser["L1"]]["L"]
+                x2 = levels[laser["L2"]]["L"]
+            dx = x2 - x1
+
+            y1 = levels[decay["L1"]]["energy"]
+            energy_2 = levels[decay["L2"]]["energy"]
+            y2 = energy_2
+            dy = y2 - y1
+
+            label = "$\Gamma={}$".format(round(Gamma, 3))
+            alpha = min([Gamma, 1])
+            self.ax.arrow(
+                x2 + 0.1,
+                y2,
+                -dx,
+                -dy,
+                width=0.02,
+                length_includes_head=True,
+                alpha=alpha,
+                linestyle="--",
+            )
+            self.ax.text(x1 + dx / 3 + 0.2, y1 + dy / 3, label)
+
+        for cavity in cavities:
+            g = cavity["g"]
+            if g == 0:
+                continue
+            Delta = cavity["Delta"]
+
+            if len(levels.keys()) == 2:
+                x1 = 1
+                x2 = 1
+            else:
+                x1 = levels[laser["L1"]]["L"]
+                x2 = levels[laser["L2"]]["L"]
+            dx = x2 - x1
+
+            y1 = levels[cavity["L1"]]["energy"]
+            energy_2 = levels[cavity["L2"]]["energy"]
+            y2 = energy_2
+            dy = y2 - y1
+
+            self.add_cavity_mirrors(min([x1, x2]), dx, y1, dy, cavity)
+
+            # self.ax.text(x1 + dx/2 - 0.4, y1 + dy / 2, label)
 
         # Set labels and legend
         self.ax.set_xlabel("L")
@@ -960,6 +1158,62 @@ class GrotrianDiagram(QWidget):
 
         # Show the plot
         self.canvas.draw()
+
+    def add_mirror(self, x, dx, y, dy, side, cavity):
+        g = cavity["g"]
+        Delta = cavity["Delta"]
+        kappa = cavity["kappa"]
+        angle1 = -np.pi / 5
+        angle2 = np.pi / 5
+        dx = abs(dx)
+        offset = 0.4
+        x_circle = x + dx / 2 + offset
+        if side == "L":
+            angle1 += np.pi
+            angle2 += np.pi
+            x_circle -= 0.8
+        y_circle = y + dy / 2
+        radius = 0.3
+        theta = np.linspace(angle1, angle2, 100)
+        x_s1 = x_circle + radius * np.cos(theta)
+        y_s1 = y_circle + radius * np.sin(theta)
+
+        mirror = lines.Line2D(x_s1, y_s1)
+        self.ax.add_line(mirror)
+
+        if side == "L":
+            label = "$g={}$,\n$\Delta_c={}$".format(round(g, 3), round(Delta, 3))
+            self.ax.text(x_circle - 0.2, y_circle - 0.2, label)
+
+        if side == "R":
+            if kappa:
+                alpha = min([kappa, 1])
+                self.ax.arrow(
+                    x_circle + 0.1,
+                    y_circle,
+                    0.2,
+                    0,
+                    width=0.01,
+                    length_includes_head=True,
+                    alpha=alpha,
+                    linestyle="--",
+                )
+                self.ax.text(
+                    x_circle + 0.1, y_circle + 0.1, "$\kappa={}$".format(kappa)
+                )
+        mode_x = np.linspace(
+            x + dx / 2 - offset - radius, x + dx / 2 + offset + radius, 100
+        )
+        x = np.linspace(0, 5 * np.pi, 100)
+        mode_y_p = 0.1 * np.sin(x) + y_circle
+        mode_y_m = -0.1 * np.sin(x) + y_circle
+        # mode_p = plt.plot(mode_x, mode_y_p)
+        # mode_m = plt.plot(mode_x, mode_y_m)
+        self.cavity_mode = plt.fill_between(mode_x, mode_y_p, mode_y_m, alpha=0)
+
+    def add_cavity_mirrors(self, x, dx, y, dy, cavity):
+        self.add_mirror(x, dx, y, dy, "L", cavity)
+        self.add_mirror(x, dx, y, dy, "R", cavity)
 
 
 def edit_key_in_place(d, oldKey, newKey):

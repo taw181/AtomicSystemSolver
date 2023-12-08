@@ -1,9 +1,10 @@
-import numpy as np
 from copy import deepcopy
+import json
+import numpy as np
 
 default_params = {
-    "Gamma": 21,
-    "tlist": np.linspace(0, 10, 1000),
+    "freq_scaling": 2 * np.pi * 21e6,
+    # "tlist": np.linspace(0, 10, 1000).tolist(),
     "B": 0,
     "zeeman": False,
     "mixed": True,
@@ -37,6 +38,22 @@ default_cavity = {
     "modes": 2,
 }
 
+default_decay = {
+    "L1": "1",
+    "L2": "2",
+    "gamma": 1.0,
+}
+
+defaults_dict = {
+    "levels": default_level,
+    "lasers": default_laser,
+    "params": default_params,
+    "decays": default_decay,
+    "cavities": default_cavity,
+}
+with open("defaults.json", "a") as default:
+    json.dump(defaults_dict, default)
+
 
 class AutoUpdateDict(dict):
     def __init__(self, *args, **kwargs):
@@ -65,24 +82,36 @@ def add_laser(l0, d1):
     l0.append(d)
 
 
+def add_cavity(l0, d1):
+    d = deepcopy(default_cavity)
+    d.update(d1)
+    l0.append(d)
+
+
 sysdict = {}
 
 """ TLA """
 levels = {}
 
-g = {"name": "g", "S": 0, "L": 0, "J": 0, "pop": [0]}
+g = {"name": "g", "S": 0, "L": 1, "J": 0, "pop": [0]}
 
-e = {"name": "e", "S": 0, "L": 1, "J": 0, "pop": [1]}
+e = {"name": "e", "S": 0, "L": 1, "J": 0, "pop": [1], "energy": 1}
 
 add_level(levels, g)
 add_level(levels, e)
 
 lasers = []
-l1 = {"L1": "g", "L2": "e", "Omega": 1, "Delta": 0.5}
+l1 = {"L1": "g", "L2": "e", "Omega": 1.0, "Delta": 0.5}
 add_laser(lasers, l1)
 params = default_params
 
-sysdict["TLA"] = {"levels": levels, "lasers": lasers, "params": params, "decays": []}
+sysdict["TLA"] = {
+    "levels": levels,
+    "lasers": lasers,
+    "params": params,
+    "decays": [],
+    "cavities": [],
+}
 
 """ TLA with decay """
 TLA_spon = deepcopy(sysdict["TLA"])
@@ -96,6 +125,17 @@ decays.append(decay)
 TLA_spon["decays"] = decays
 sysdict["TLA_spon"] = TLA_spon
 
+""" TLA with cavity """
+TLA_c = deepcopy(sysdict["TLA"])
+cavities = []
+cavity = {
+    "L1": "g",
+    "L2": "e",
+}
+add_cavity(cavities, cavity)
+TLA_c["cavities"] = cavities
+sysdict["TLA_c"] = TLA_c
+
 """ Lambda """
 levels = {}
 level = {
@@ -104,6 +144,7 @@ level = {
     "L": 0,
     "J": 0.5,
     "pop": [0],
+    "energy": 0
 }
 add_level(levels, level)
 level = {
@@ -112,9 +153,10 @@ level = {
     "L": 1,
     "J": 0.5,
     "pop": [1],
+    "energy": 2
 }
 add_level(levels, level)
-level = {"name": "3", "S": 0.5, "L": 2, "J": 1.5, "pop": [0]}
+level = {"name": "3", "S": 0.5, "L": 2, "J": 1.5, "pop": [0], "energy": 0.5}
 add_level(levels, level)
 
 lasers = []
@@ -125,4 +167,18 @@ add_laser(lasers, laser)
 
 params = default_params
 
-sysdict["Lambda"] = {"levels": levels, "lasers": lasers, "params": params, "decays": []}
+sysdict["Lambda"] = {
+    "levels": levels,
+    "lasers": lasers,
+    "params": params,
+    "decays": [],
+    "cavities": [],
+}
+
+with open("systems.json", "r+") as systems:
+    file_store = json.load(systems)
+
+file_store.update(sysdict)
+
+with open("systems.json", "w") as systems:
+    json.dump(file_store, systems)

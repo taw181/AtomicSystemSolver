@@ -1,4 +1,6 @@
-from PyQt5.QtWidgets import QFrame, QVBoxLayout, QWidget, QSpinBox, QComboBox, QLabel, QLineEdit, QPushButton
+from PyQt5.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QLabel
+
 
 def add_framed_widget(widget_type, parent_layout, label="", args=None, kwargs=None):
     if not args:
@@ -7,7 +9,7 @@ def add_framed_widget(widget_type, parent_layout, label="", args=None, kwargs=No
         kwargs = {}
     frame = QFrame()
     layout = QVBoxLayout()
-    layout.setContentsMargins(0,0,0,0)
+    layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(1)
     layout.addWidget(QLabel(label))
     widget = widget_type(*args, **kwargs)
@@ -15,6 +17,27 @@ def add_framed_widget(widget_type, parent_layout, label="", args=None, kwargs=No
     frame.setLayout(layout)
     parent_layout.addWidget(frame)
     return widget
+
+
+class htmlCheckBox(QWidget):
+    def __init__(self, label_text="", parent=None):
+        super().__init__(parent=parent)
+        self.checkBox = QCheckBox()
+        self.label = QLabel(label_text)
+
+        self.stateChanged = self.checkBox.stateChanged
+
+        self.layout = QHBoxLayout()
+        self.layout.addWidget(self.label)
+        self.layout.addWidget(self.checkBox)
+        self.setLayout(self.layout)
+
+    def isChecked(self):
+        return self.checkBox.isChecked()
+
+    def setChecked(self, state):
+        self.checkBox.setChecked(state)
+
 
 # def generate_framed_widget(inner_widget_class):
 #     class FramedWidget(QFrame, inner_widget_class):
@@ -74,7 +97,7 @@ def add_framed_widget(widget_type, parent_layout, label="", args=None, kwargs=No
 #         self.box.setValue(default)
 #         layout.addWidget(self.box)
 #         self.setLayout(layout)
-        
+
 # class AMBox(SpinBox):
 #     def __init__(self, label, default=0, intval=False, parent=None):
 #         super().__init__(label, default=0, intval=False, minval=0, maxval=5, parent=parent)
@@ -89,7 +112,7 @@ def add_framed_widget(widget_type, parent_layout, label="", args=None, kwargs=No
 #         self.box = QComboBox()
 #         layout.addWidget(self.box)
 #         self.setLayout(layout)
-        
+
 # class PushButton(QFrame):
 #     def __init__(self,label):
 #         super().__init__()

@@ -9,10 +9,14 @@ import qutip as qu
 import numpy as np
 import qutipfuncs as quf
 from fractions import Fraction
+import time
 
 
 class AtomSystem:
     def __init__(self, levels, lasers, decays, params, cavity=None):
+        qu.settings.auto_tidyup = True
+        qu.settings.auto_tidyup_atol = 1e-10
+        t0 = time.time()
         self.params = params
         self.levels = levels
         self.cavity = cavity
@@ -24,7 +28,7 @@ class AtomSystem:
         self._atom()
         self._transitions()
         if cavity:
-            self._cavity(cavity)
+            self._cavity()
 
         self._Bfield()
         # for laser in lasers:
@@ -32,6 +36,8 @@ class AtomSystem:
         self._interactions()
         self._hamiltonian()
         self._decays()
+        t = time.time() - t0
+        print("Time to build system: {}".format(round(t, 5)))
         # self._solve(levels)
 
     def _atom(self):
@@ -53,7 +59,8 @@ class AtomSystem:
             n += level.N
         self.Iat = qu.qeye(self.Nat)
 
-    def _cavity(self, cavity):
+    def _cavity(self):
+        cavity = self.cavity
         N = cavity.N
         self.Ic = qu.qeye(N)
         # astates = [qu.tensor(astate,qu.qeye(N)) for astate in self.astates]
@@ -73,7 +80,7 @@ class AtomSystem:
         self.HB = 0
         for level in self.levels:
             if level.J != 0:
-                scaling_factor = 2 * np.pi * 21.57 * 1e6
+                scaling_factor = self.params["freq_scaling"]
                 w = quf.zeemanFS(level.J, level.S, level.L, 1e-4, scaling_factor)
                 for i, m in enumerate(level.M):
                     self.HB += self.projectors[level.name][i] * m * w * self.params["B"]
@@ -123,6 +130,9 @@ class AtomSystem:
             name = laser.name
             if self.params["zeeman"]:
                 pol_at = quf.pol(laser, self.Bdir)
+                print(
+                    "laser {} has polarisation {} in atomic frame".format(name, pol_at)
+                )
                 HL = sum(
                     [
                         pol_at[i] * self.Aops[name][i]
@@ -166,18 +176,24 @@ class AtomSystem:
         self.H = self.H0 + self.HL + self.HB
         if self.cavity:
             self.H += self.Hc
-            
+
     def _decays(self):
         self.c_ops = []
         for decay in self.decays:
             name = decay.name
-            c_op = decay.gamma*sum(self.Aops[name])
+            for Aop in self.Aops[name]:
+                c_op = np.sqrt(decay.gamma) * Aop
+                self.c_ops.append(c_op)
+        if self.cavity:
+            name = self.cavity.name
+            c_op = np.sqrt(self.cavity.kappa) * self.a
             self.c_ops.append(c_op)
 
     def solve(self):
+        t0 = time.time()
         tlist = np.linspace(0, self.params["t_max"], self.params["n_step"])
         levels = self.levels
-        if not self.params["mixed"]:
+        if self.params["mixed"]:
             self.rho0 = sum(
                 [
                     level.pop[i] * qu.ket2dm(level.states[i])
@@ -186,7 +202,7 @@ class AtomSystem:
                 ]
             )
             if self.cavity:
-                self.rho0 = qu.tensor(self.rho0, self.cavity.psi0)
+                self.rho0 = qu.tensor(self.rho0, qu.ket2dm(self.cavity.psi0))
         else:
             self.rho0 = sum(
                 [
@@ -196,15 +212,16 @@ class AtomSystem:
                 ]
             )
             if self.cavity:
-                self.rho0 = qu.tensor(self.rho0, qu.ket2dm(self.cavity.psi0))
+                self.rho0 = qu.tensor(self.rho0, self.cavity.psi0)
         # C_spon = np.sqrt(params['gamma'])*self.sm
         # C_lw_g = np.sqrt(LW)*proj_g
         # C_lw_e = np.sqrt(LW)*proj_e
         # self.c_ops = [C_spon]
-        tlist = self.params["tlist"]
         options = qu.Options(store_states=True)
         if self.c_ops:
-            self.result = qu.mesolve(self.H, self.rho0, tlist, c_ops=self.c_ops, options=options)
+            self.result = qu.mesolve(
+                self.H, self.rho0, tlist, c_ops=self.c_ops, options=options
+            )
         else:
             self.result = qu.mesolve(self.H, self.rho0, tlist, options=options)
 
@@ -220,9 +237,13 @@ class AtomSystem:
                                 M_frac.numerator, M_frac.denominator
                             )
                             new_key = key + " $m_J=$" + M_frac
+                            # new_key = "|{}, {}>".format(key, M_frac)
+                            # new_key = key + "m <sub>J</sub> =" + M_frac
                     self.e_ops[new_key] = op
             else:
                 self.e_ops[key] = lst[0]
         if self.cavity:
             self.e_ops["n"] = self.ad * self.a
+        t = time.time() - t0
+        print("Time to solve system: {}".format(round(t, 5)))
         return self.result, self.e_ops
