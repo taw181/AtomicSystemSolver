@@ -1082,12 +1082,23 @@ class GrotrianDiagram(QWidget):
             y2 = energy_2 - Delta / 10
             dy = y2 - y1
 
+            x_offset = -np.sign(dx) * 0.1
             label = "$\Omega={}$,\n$\Delta={}$".format(round(Omega, 3), round(Delta, 3))
             alpha = min([Omega, 1])
             self.ax.arrow(
-                x1 - 0.1, y1, dx, dy, width=0.02, length_includes_head=True, alpha=alpha
+                x1 + x_offset,
+                y1,
+                dx / 1.2,
+                dy,
+                width=0.02,
+                length_includes_head=True,
+                alpha=alpha,
             )
-            self.ax.text(x1 + dx / 1.5 - 0.5, y1 + dy / 1.5, label)
+
+            label_offset = 0
+            if np.sign(dx) == -1:
+                label_offset -= 0.4
+            self.ax.text(x1 + label_offset, y1 + dy / 1.5, label)
 
             if Delta != 0:
                 self.ax.hlines(
@@ -1103,8 +1114,8 @@ class GrotrianDiagram(QWidget):
                 x1 = 1
                 x2 = 1
             else:
-                x1 = levels[laser["L1"]]["L"]
-                x2 = levels[laser["L2"]]["L"]
+                x1 = levels[decay["L1"]]["L"]
+                x2 = levels[decay["L2"]]["L"]
             dx = x2 - x1
 
             y1 = levels[decay["L1"]]["energy"]
@@ -1112,19 +1123,23 @@ class GrotrianDiagram(QWidget):
             y2 = energy_2
             dy = y2 - y1
 
+            x_offset = -np.sign(dx) * 0.1
             label = "$\Gamma={}$".format(round(Gamma, 3))
             alpha = min([Gamma, 1])
             self.ax.arrow(
-                x2 + 0.1,
+                x2 + x_offset,
                 y2,
-                -dx,
+                -dx / 1.2,
                 -dy,
                 width=0.02,
                 length_includes_head=True,
                 alpha=alpha,
                 linestyle="--",
             )
-            self.ax.text(x1 + dx / 3 + 0.2, y1 + dy / 3, label)
+            label_offset = dx / 4 + 0.1
+            if np.sign(dx) == -1:
+                label_offset -= 0.6
+            self.ax.text(x1 + label_offset, y1 + dy / 4, label)
 
         for cavity in cavities:
             g = cavity["g"]
@@ -1136,8 +1151,8 @@ class GrotrianDiagram(QWidget):
                 x1 = 1
                 x2 = 1
             else:
-                x1 = levels[laser["L1"]]["L"]
-                x2 = levels[laser["L2"]]["L"]
+                x1 = levels[cavity["L1"]]["L"]
+                x2 = levels[cavity["L2"]]["L"]
             dx = x2 - x1
 
             y1 = levels[cavity["L1"]]["energy"]
@@ -1166,12 +1181,12 @@ class GrotrianDiagram(QWidget):
         angle1 = -np.pi / 5
         angle2 = np.pi / 5
         dx = abs(dx)
-        offset = 0.4
+        offset = 0.3
         x_circle = x + dx / 2 + offset
         if side == "L":
             angle1 += np.pi
             angle2 += np.pi
-            x_circle -= 0.8
+            x_circle -= 2 * offset
         y_circle = y + dy / 2
         radius = 0.3
         theta = np.linspace(angle1, angle2, 100)
@@ -1183,13 +1198,13 @@ class GrotrianDiagram(QWidget):
 
         if side == "L":
             label = "$g={}$,\n$\Delta_c={}$".format(round(g, 3), round(Delta, 3))
-            self.ax.text(x_circle - 0.2, y_circle - 0.2, label)
+            self.ax.text(x_circle - radius - offset, y_circle - 0.4, label)
 
         if side == "R":
             if kappa:
                 alpha = min([kappa, 1])
                 self.ax.arrow(
-                    x_circle + 0.1,
+                    x_circle + radius,
                     y_circle,
                     0.2,
                     0,
@@ -1199,14 +1214,14 @@ class GrotrianDiagram(QWidget):
                     linestyle="--",
                 )
                 self.ax.text(
-                    x_circle + 0.1, y_circle + 0.1, "$\kappa={}$".format(kappa)
+                    x_circle + radius, y_circle + 0.1, "$\kappa={}$".format(kappa)
                 )
         mode_x = np.linspace(
             x + dx / 2 - offset - radius, x + dx / 2 + offset + radius, 100
         )
-        x = np.linspace(0, 5 * np.pi, 100)
-        mode_y_p = 0.1 * np.sin(x) + y_circle
-        mode_y_m = -0.1 * np.sin(x) + y_circle
+        x_list = np.linspace(0, 5 * np.pi, 100)
+        mode_y_p = 0.1 * np.sin(x_list) + y_circle
+        mode_y_m = -0.1 * np.sin(x_list) + y_circle
         # mode_p = plt.plot(mode_x, mode_y_p)
         # mode_m = plt.plot(mode_x, mode_y_m)
         self.cavity_mode = plt.fill_between(mode_x, mode_y_p, mode_y_m, alpha=0)
