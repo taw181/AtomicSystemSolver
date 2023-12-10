@@ -4,6 +4,8 @@ import numpy as np
 import copy
 from fractions import Fraction
 import time
+from datetime import datetime
+import os
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout
@@ -19,13 +21,15 @@ import matplotlib.lines as lines
 
 import qutip as qu
 import qutipfuncs as quf
-from qobjects import Cavity, Level, Laser, Decay
-from system_builder import AtomSystem
+
+# from qobjects import Cavity, Level, Laser, Decay
+from system_builder import build_system_from_dict
 from systems import defaults_dict
 
 L_dict = {"S": 0, "P": 1, "D": 2}
-
 L_dict_inv = {0: "S", 1: "P", 2: "D"}
+
+save_path = "results/"
 
 
 class AtomGui(QMainWindow):
@@ -807,12 +811,13 @@ class SolverWidget(QGroupBox):
         self.autoSolveBox.setChecked(True)
         self.layout.addWidget(self.autoSolveBox)
 
-        self.layout.addLayout(self.topLayout)
+        self.saveNameBox = QLineEdit()
+        self.layout.addWidget(self.saveNameBox)
 
         self.buttonsLayout = QHBoxLayout()
-        self.printButton = QPushButton("Print")
-        self.printButton.clicked.connect(self.print_system)
-        self.buttonsLayout.addWidget(self.printButton)
+        self.saveButton = QPushButton("Save")
+        self.saveButton.clicked.connect(self.save_result)
+        self.buttonsLayout.addWidget(self.saveButton)
         self.solveButton = QPushButton("Solve System")
         self.solveButton.clicked.connect(self.main_widget.update)
         self.buttonsLayout.addWidget(self.solveButton)
@@ -821,42 +826,29 @@ class SolverWidget(QGroupBox):
 
         self.setLayout(self.layout)
 
-    def print_system(self):
-        print(self.parent.system_dict)
-        self.system_dict = self.parent.system_dict
-        system = self.build_system(self.system_dict)
-        print(system.levels)
-        print(" ")
-        print(system.lasers)
-        print(" ")
-        print(system.params)
+    def save_result(self):
+        """
+        creates a json file of the current loop. if auto, this goes to the looplist.
+        if not, a file is created based on the current date and time.
+        """
+        date_dir = datetime.today().strftime("%Y_%m_%d")
+        time_path = datetime.today().strftime("%Hh%M")
+        full_dir = save_path + date_dir + "/"
+        path_pre = full_dir + time_path + "_" + self.saveNameBox.text()
+        if not os.path.exists(full_dir):
+            os.makedirs(full_dir)
 
-    def build_system(self, system_dict):
-        levels = []
-        for v in system_dict["levels"].values():
-            levels.append(Level(**v))
-        lasers = []
-        for v in system_dict["lasers"]:
-            lasers.append(Laser(**v))
-        decays = []
-        for v in system_dict["decays"]:
-            decays.append(Decay(**v))
-        cavities = [None]
-        for v in system_dict["cavities"]:
-            cavities = [Cavity(**v)]
-        try:
-            atom_system = AtomSystem(
-                levels, lasers, decays, system_dict["params"], cavity=cavities[0]
-            )
-            return atom_system
-        except Exception as e:
-            print("Failed to build system")
-            print(e)
+        result_path = path_pre + "_result"
+        system_path = path_pre + "_system.json"
+
+        qu.qsave(self.result, result_path)
+        with open(system_path, "w") as outfile:
+            json.dump(self.system_dict, outfile)
 
     def solve_system(self):
         try:
             self.system_dict = self.parent.system_dict
-            system = self.build_system(self.system_dict)
+            system = build_system_from_dict(self.system_dict)
             self.result, self.e_ops = system.solve()
             self.main_widget.plotter.set_e_ops(self.e_ops)
         except Exception as e:

@@ -10,16 +10,40 @@ import numpy as np
 import qutipfuncs as quf
 from fractions import Fraction
 import time
+from qobjects import Level, Laser, Decay, Cavity
+
+
+def build_system_from_dict(system_dict):
+    levels = []
+    for v in system_dict["levels"].values():
+        levels.append(Level(**v))
+    lasers = []
+    for v in system_dict["lasers"]:
+        lasers.append(Laser(**v))
+    decays = []
+    for v in system_dict["decays"]:
+        decays.append(Decay(**v))
+    cavities = [None]
+    for v in system_dict["cavities"]:
+        cavities = [Cavity(**v)]
+    try:
+        atom_system = AtomSystem(
+            levels, lasers, decays, system_dict["params"], cavities
+        )
+        return atom_system
+    except Exception as e:
+        print("Failed to build system")
+        print(e)
 
 
 class AtomSystem:
-    def __init__(self, levels, lasers, decays, params, cavity=None):
+    def __init__(self, levels, lasers, decays, params, cavities):
         qu.settings.auto_tidyup = True
         qu.settings.auto_tidyup_atol = 1e-10
         t0 = time.time()
         self.params = params
         self.levels = levels
-        self.cavity = cavity
+        self.cavity = cavities[0]
         self.lasers = lasers
         self.decays = decays
         self.result = None
@@ -27,7 +51,7 @@ class AtomSystem:
         # self.tlist = np.linspace(0,params['tmax'],params['steps'])
         self._atom()
         self._transitions()
-        if cavity:
+        if self.cavity:
             self._cavity()
 
         self._Bfield()
@@ -38,7 +62,6 @@ class AtomSystem:
         self._decays()
         t = time.time() - t0
         print("Time to build system: {}".format(round(t, 5)))
-        # self._solve(levels)
 
     def _atom(self):
         levels = self.levels
