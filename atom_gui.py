@@ -123,7 +123,7 @@ class AtomGui(QMainWindow):
         self.all_systems[newName] = copy.deepcopy(self.system_dict)
         self.system_dict = self.all_systems[newName]
         with open("systems.json", "w") as systems:
-            json.dump(self.all_systems, systems, indent=2)
+            json.dump(self.all_systems, systems, indent=4)
         self.update_system_list()
         find_or_add(self.systemSelector, newName)
 
@@ -131,7 +131,7 @@ class AtomGui(QMainWindow):
         key = self.sysName.text()
         self.all_systems.pop(key),
         with open("systems.json", "w") as systems:
-            json.dump(self.all_systems, systems, indent=2)
+            json.dump(self.all_systems, systems, indent=4)
         self.update_system_list()
 
     def update_system_list(self):
@@ -152,7 +152,7 @@ class AtomGui(QMainWindow):
         self.decays.init_section()
         self.solver.init_section()
         self.plotter.init_section()
-        for level in self.system_dict["levels"]:
+        for level in self.system_dict["levels"].keys():
             self.levels.add_level(level)
         for laser in self.system_dict["lasers"]:
             self.lasers.add_coupling()
@@ -267,6 +267,7 @@ class LevelWidget(QFrame):
     def __init__(self, name, parent=None):
         super().__init__(parent)
         self.name = name
+        self.parent = parent
         self.system_dict = parent.system_dict
         self.level_dict = parent.levels_dict[name]
         self.main_widget = parent.main_widget
@@ -327,7 +328,10 @@ class LevelWidget(QFrame):
     def set_level(self):
         old_name = self.name
         new_name = self.nameBox.text()
-        edit_key_in_place(self.system_dict, old_name, new_name)
+        edit_key_in_place(self.system_dict["levels"], old_name, new_name)
+        edit_key_in_place(self.parent.levels_widget_dict, old_name, new_name)
+        print(self.system_dict)
+        self.level_dict["name"] = new_name
         self.name = new_name
         pop = self.popBox.text()
         try:
@@ -337,6 +341,17 @@ class LevelWidget(QFrame):
         self.level_dict["J"] = self.jBox.value()
         self.level_dict["L"] = self.lBox.value()
         self.level_dict["S"] = self.sBox.value()
+
+        for section in [
+            self.main_widget.lasers,
+            self.main_widget.decays,
+            self.main_widget.cavities,
+        ]:
+            section.get_levels()
+
+        print(self.system_dict)
+        print(self.level_dict)
+
         self.main_widget.auto_update()
 
     def delete_level(self):
@@ -393,12 +408,26 @@ class CouplingSection(QGroupBox):
         self.num_couplings += 1
 
     def get_levels(self):
+        level_names = self.main_widget.levels.levels_dict.keys()
         for laser in self.widget_dict.values():
-            for key in self.main_widget.levels.levels_dict.keys():
-                if laser.groundBox.findText(key) == -1:
-                    laser.groundBox.addItem(key)
-                if laser.excitedBox.findText(key) == -1:
-                    laser.excitedBox.addItem(key)
+            for box in [laser.groundBox, laser.excitedBox]:
+                current_level = box.currentText()
+                while current_level not in level_names:
+                    box.removeItem(box.findText(current_level))
+                    current_level = box.currentText()
+                for i in range(box.count()):
+                    if box.itemText(i) not in level_names:
+                        box.removeItem(i)
+                for name in level_names:
+                    if box.findText(name) == -1:
+                        box.addItem(name)
+            if laser.groundBox.currentText() == laser.excitedBox.currentText():
+                if laser.groundBox.currentIndex() > 0:
+                    laser.groundBox.setCurrentIndex(laser.groundBox.currentIndex() - 1)
+                else:
+                    laser.excitedBox.setCurrentIndex(
+                        laser.excitedBox.currentIndex() + 1
+                    )
 
     def remove_widget(self, idx):
         self.couplingsLayout.removeWidget(self.widget_dict[idx])
@@ -843,7 +872,7 @@ class SolverWidget(QGroupBox):
 
         qu.qsave(self.result, result_path)
         with open(system_path, "w") as outfile:
-            json.dump(self.system_dict, outfile)
+            json.dump(self.system_dict, outfile, indent=4)
 
     def solve_system(self):
         try:

@@ -51,23 +51,8 @@ defaults_dict = {
     "decays": default_decay,
     "cavities": default_cavity,
 }
-with open("defaults.json", "a") as default:
-    json.dump(defaults_dict, default)
-
-
-class AutoUpdateDict(dict):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.callbacks = []
-
-    def add_callback(self, callback):
-        self.callbacks.append(callback)
-
-    def __setitem__(self, key, value):
-        if self.get(key) != value:
-            super().__setitem__(key, value)
-            for callback in self.callbacks:
-                callback(key, value)
+with open("defaults.json", "w") as default:
+    json.dump(defaults_dict, default, indent=4)
 
 
 def add_level(d0, d1):
@@ -84,6 +69,12 @@ def add_laser(l0, d1):
 
 def add_cavity(l0, d1):
     d = deepcopy(default_cavity)
+    d.update(d1)
+    l0.append(d)
+
+
+def add_decay(l0, d1):
+    d = deepcopy(default_decay)
     d.update(d1)
     l0.append(d)
 
@@ -138,23 +129,9 @@ sysdict["TLA_c"] = TLA_c
 
 """ Lambda """
 levels = {}
-level = {
-    "name": "1",
-    "S": 0.5,
-    "L": 0,
-    "J": 0.5,
-    "pop": [0],
-    "energy": 0
-}
+level = {"name": "1", "S": 0.5, "L": 0, "J": 0.5, "pop": [0], "energy": 0}
 add_level(levels, level)
-level = {
-    "name": "2",
-    "S": 0.5,
-    "L": 1,
-    "J": 0.5,
-    "pop": [1],
-    "energy": 2
-}
+level = {"name": "2", "S": 0.5, "L": 1, "J": 0.5, "pop": [1], "energy": 2}
 add_level(levels, level)
 level = {"name": "3", "S": 0.5, "L": 2, "J": 1.5, "pop": [0], "energy": 0.5}
 add_level(levels, level)
@@ -181,4 +158,4 @@ with open("systems.json", "r+") as systems:
 file_store.update(sysdict)
 
 with open("systems.json", "w") as systems:
-    json.dump(file_store, systems)
+    json.dump(file_store, systems, indent=4)

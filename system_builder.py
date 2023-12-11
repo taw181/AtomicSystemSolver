@@ -240,13 +240,17 @@ class AtomSystem:
         # C_lw_g = np.sqrt(LW)*proj_g
         # C_lw_e = np.sqrt(LW)*proj_e
         # self.c_ops = [C_spon]
-        options = qu.Options(store_states=True)
-        if self.c_ops:
+        try:
+            options = qu.Options(store_states=True, rhs_reuse=False)
             self.result = qu.mesolve(
-                self.H, self.rho0, tlist, c_ops=self.c_ops, options=options
-            )
-        else:
-            self.result = qu.mesolve(self.H, self.rho0, tlist, options=options)
+                self.H, self.rho0, tlist, c_ops=self.c_ops, options=options)
+        except Exception as e:
+            print("Failed to resue Hamiltonian data")
+            print(e)
+            options.rhs_reuse = False
+            self.result = qu.mesolve(
+                self.H, self.rho0, tlist, c_ops=self.c_ops, options=options)
+            print("solve succeeded with new rhs")
 
         self.e_ops = {}
         for key, lst in self.projectors.items():
