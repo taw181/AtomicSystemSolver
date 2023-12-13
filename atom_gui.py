@@ -669,6 +669,8 @@ class LaserWidget(CouplingWidget):
         self.s3Box.setValue(self.coupling_dict["S"][2])
 
     def update_args(self):
+        if 'args' not in self.coupling_dict:
+            self.coupling_dict['args'] = {}
         for key, box in self.arg_boxes.items():
             self.coupling_dict["args"][key] = box.value()
         self.main_widget.auto_update()
