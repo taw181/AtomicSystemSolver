@@ -25,6 +25,7 @@ import qutipfuncs as quf
 # from qobjects import Cavity, Level, Laser, Decay
 from system_builder import build_system_from_dict
 from systems import defaults_dict
+from H_funcs import funcs, default_args
 
 L_dict = {"S": 0, "P": 1, "D": 2}
 L_dict_inv = {0: "S", 1: "P", 2: "D"}
@@ -160,6 +161,7 @@ class AtomGui(QMainWindow):
             self.decays.add_coupling()
         for cavity in self.system_dict["cavities"]:
             self.cavities.add_coupling()
+        self.paramsWidget.get_params()
         self.update()
 
     def auto_update(self):
@@ -313,10 +315,6 @@ class LevelWidget(QFrame):
         self.lBox.valueChanged.connect(self.set_level)
         self.jBox.valueChanged.connect(self.set_level)
 
-        # self.removeButton = QPushButton('Remove Level')
-        # self.removeButton.clicked.connect(lambda: self.removeLevel(num,parent))
-        # self.layout.addWidget(self.removeButton)
-
         self.setLayout(self.layout)
 
     def get_level_pars(self):
@@ -457,18 +455,18 @@ class CouplingWidget(QFrame):
         self.layout.addWidget(self.mainFrame)
         self.init_main_boxes()
 
+        # self.init_arg_boxes()
+        self.init_cavity_boxes()
+
         self.AMFrame = QFrame()
         self.AMLayout = QHBoxLayout()
         self.AMFrame.setLayout(self.AMLayout)
         self.layout.addWidget(self.AMFrame)
         self.init_AM_boxes()
 
-        self.init_cavity_boxes()
-
         self.setLayout(self.layout)
 
-        if not self.system_dict["params"]["zeeman"]:
-            self.AMFrame.hide()
+        self.AMFrame.hide()
 
         self.get_pars()
         self.init_connections()
@@ -480,6 +478,9 @@ class CouplingWidget(QFrame):
         pass
 
     def init_AM_boxes(self):
+        pass
+
+    def init_arg_boxes(self):
         pass
 
     def init_connections(self):
@@ -557,6 +558,7 @@ class LasersSection(CouplingSection):
 
 class LaserWidget(CouplingWidget):
     def __init__(self, num, key, parent=None):
+        self.arg_boxes = {}
         super().__init__(num, key, parent=parent)
 
     def init_main_boxes(self):
@@ -580,6 +582,50 @@ class LaserWidget(CouplingWidget):
         self.deltaBox.setMaximum(100)
         self.deltaBox.setMinimum(-100)
 
+        self.funcBox = add_framed_widget(QComboBox, self.mainLayout, label="function")
+        self.funcBox.addItem("")
+        for key in funcs.keys():
+            self.funcBox.addItem(key)
+        idx = self.funcBox.findText(self.coupling_dict["func"])
+        self.funcBox.setCurrentIndex(idx)
+        self.argLayout = QHBoxLayout()
+        self.init_arg_boxes()
+        self.set_func()
+        self.layout.addLayout(self.argLayout)
+
+    def set_func(self):
+        func_name = self.funcBox.currentText()
+        self.init_arg_boxes()
+        if func_name:
+            if (func_name == self.coupling_dict["func"]) and (
+                self.coupling_dict["args"]
+            ):
+                args = self.coupling_dict["args"]
+            else:
+                args = default_args[func_name]
+            for key, v in args.items():
+                print("setting {} to {}".format(key, v))
+                self.arg_boxes[key].blockSignals(True)
+                self.arg_boxes[key].setValue(v)
+                self.arg_boxes[key].blockSignals(False)
+        self.coupling_dict["func"] = func_name
+        self.main_widget.auto_update()
+
+    def init_arg_boxes(self):
+        self.remove_arg_boxes()
+        func_name = self.funcBox.currentText()
+        if func_name:
+            for arg in default_args[func_name].keys():
+                argBox = add_framed_widget(QDoubleSpinBox, self.argLayout, arg)
+                argBox.valueChanged.connect(self.update_args)
+                self.arg_boxes[arg] = argBox
+
+    def remove_arg_boxes(self):
+        for key, box in copy.copy(self.arg_boxes).items():
+            self.argLayout.removeWidget(box.frame)
+            box.frame.deleteLater()
+            self.arg_boxes.pop(key)
+
     def init_AM_boxes(self):
         self.kBox = add_framed_widget(QSpinBox, self.AMLayout, label="k")
         self.kBox.setMaximum(360)
@@ -600,6 +646,11 @@ class LaserWidget(CouplingWidget):
         self.excitedBox.currentTextChanged.connect(
             lambda val: self.set_values("L2", val)
         )
+        # self.funcBox.currentTextChanged.connect(
+        #     lambda val: self.set_values("func", val)
+        # )
+        self.funcBox.currentTextChanged.connect(self.set_func)
+
         self.omegaBox.valueChanged.connect(lambda val: self.set_values("Omega", val))
         self.deltaBox.valueChanged.connect(lambda val: self.set_values("Delta", val))
 
@@ -616,6 +667,11 @@ class LaserWidget(CouplingWidget):
         self.s1Box.setValue(self.coupling_dict["S"][0])
         self.s2Box.setValue(self.coupling_dict["S"][1])
         self.s3Box.setValue(self.coupling_dict["S"][2])
+
+    def update_args(self):
+        for key, box in self.arg_boxes.items():
+            self.coupling_dict["args"][key] = box.value()
+        self.main_widget.auto_update()
 
 
 class CavitySection(CouplingSection):
@@ -776,7 +832,7 @@ class ParamsSection(QGroupBox):
         self.tlistGroup.setLayout(self.tlistLayout)
         self.layout.addWidget(self.tlistGroup)
 
-        self.bFieldGroup = QGroupBox("B Field")
+        self.bFieldGroup = QGroupBox("")
         self.bFieldLayout = QHBoxLayout()
         self.bBox = add_framed_widget(QDoubleSpinBox, self.bFieldLayout, label="B")
         # self.bDirBox = add_framed_widget(QSpinBox, self.bFieldLayout, label='Bdir')
@@ -793,9 +849,7 @@ class ParamsSection(QGroupBox):
         self.othersLayout.addWidget(self.mixedBool)
         self.bFieldLayout.addLayout(self.othersLayout)
 
-        self.setParamsButton = QPushButton("Set Params")
-        self.setParamsButton.clicked.connect(self.set_params)
-        # self.layout.addWidget(self.setParamsButton)
+        self.get_params()
 
         self.startBox.valueChanged.connect(self.set_params)
         self.endBox.valueChanged.connect(self.set_params)
@@ -818,6 +872,16 @@ class ParamsSection(QGroupBox):
         self.params["mixed"] = self.mixedBool.isChecked()
         self.main_widget.auto_update()
 
+    def get_params(self):
+        self.params = self.main_widget.system_dict["params"]
+        self.startBox.setValue(self.params["t_start"])
+        self.endBox.setValue(self.params["t_max"])
+        self.stepsBox.setValue(self.params["n_step"])
+
+        self.bBox.setValue(self.params["t_start"])
+        self.zeemanBool.setChecked(self.params["zeeman"])
+        self.mixedBool.setChecked(self.params["mixed"])
+
 
 class SolverWidget(QGroupBox):
     def __init__(self, parent=None):
@@ -832,9 +896,6 @@ class SolverWidget(QGroupBox):
         self.params = parent.paramsWidget.params
         self.layout = QHBoxLayout()
         self.exp_dict = {}
-
-        self.topLayout = QHBoxLayout()
-        # self.topLayout.addWidget(QLabel("Solver"))
 
         self.autoSolveBox = QCheckBox("Auto solve")
         self.autoSolveBox.setChecked(True)
@@ -856,10 +917,6 @@ class SolverWidget(QGroupBox):
         self.setLayout(self.layout)
 
     def save_result(self):
-        """
-        creates a json file of the current loop. if auto, this goes to the looplist.
-        if not, a file is created based on the current date and time.
-        """
         date_dir = datetime.today().strftime("%Y_%m_%d")
         time_path = datetime.today().strftime("%Hh%M")
         full_dir = save_path + date_dir + "/"
@@ -877,8 +934,8 @@ class SolverWidget(QGroupBox):
     def solve_system(self):
         try:
             self.system_dict = self.parent.system_dict
-            system = build_system_from_dict(self.system_dict)
-            self.result, self.e_ops = system.solve()
+            self.system = build_system_from_dict(self.system_dict)
+            self.result, self.e_ops = self.system.solve()
             self.main_widget.plotter.set_e_ops(self.e_ops)
         except Exception as e:
             print("Failed to solve system")
@@ -896,6 +953,27 @@ class SolverWidget(QGroupBox):
                 )
                 self.parent.plotter.plot(tlist, exp, label=key)
         self.tlist = tlist
+
+        # for laser_dict in self.main_widget.system_dict['lasers']:
+        #     if func_name := laser_dict['func']:
+        #         laser_name = laser_dict["name"]
+        #         func = funcs[func_name]
+        #         args = laser_dict['args']
+        #         laser_y = func(tlist, args, laser_name)
+        #         laser_y /= max(laser_y)
+        #         self.parent.plotter.plot(tlist, exp, label=laser_name + ' ' + func)
+        if self.system:
+            for laser in self.system.lasers:
+                if func_name := laser.func:
+                    laser_name = laser.name
+                    func = funcs[func_name]
+                    args = laser.args
+                    laser_y = func(tlist, args, laser_name)
+                    if m := laser_y.max() != 0:
+                        laser_y = laser_y / m
+                    self.parent.plotter.plot(
+                        tlist, laser_y, label=laser_name + " " + func_name
+                    )
 
     def init_section(self):
         pass

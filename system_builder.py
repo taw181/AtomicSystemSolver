@@ -11,6 +11,7 @@ import qutipfuncs as quf
 from fractions import Fraction
 import time
 from qobjects import Level, Laser, Decay, Cavity
+from H_funcs import funcs, func_generator
 
 
 def build_system_from_dict(system_dict):
@@ -86,16 +87,12 @@ class AtomSystem:
         cavity = self.cavity
         N = cavity.N
         self.Ic = qu.qeye(N)
-        # astates = [qu.tensor(astate,qu.qeye(N)) for astate in self.astates]
-        # self.astates = astates
         for key in self.projectors.keys():
             self.projectors[key] = [
                 qu.tensor(proj, qu.qeye(N)) for proj in self.projectors[key]
             ]
         for key in self.Aops.keys():
             self.Aops[key] = [qu.tensor(Aop, qu.qeye(N)) for Aop in self.Aops[key]]
-        # cstates = [qu.tensor(qu.qeye(self.Nat),cstate) for cstate in cavity.states]
-        # self.cstates=cstates
         self.a = qu.tensor(self.Iat, qu.destroy(N))
         self.ad = self.a.dag()
 
@@ -148,14 +145,12 @@ class AtomSystem:
 
     def _interactions(self):
         cavity = self.cavity
-        self.HL = []
+        self.HL_0 = []
+        self.HL_t = []
         for laser in self.lasers:
             name = laser.name
             if self.params["zeeman"]:
                 pol_at = quf.pol(laser, self.Bdir)
-                print(
-                    "laser {} has polarisation {} in atomic frame".format(name, pol_at)
-                )
                 HL = sum(
                     [
                         pol_at[i] * self.Aops[name][i]
@@ -164,8 +159,17 @@ class AtomSystem:
                 )
             else:
                 HL = sum(self.Aops[name])
-            self.HL.append(laser.Omega * HL + np.conj(laser.Omega) * HL.dag())
-        self.HL = sum(self.HL)
+            # H = laser.Omega * HL + np.conj(laser.Omega) * HL.dag() ## for allowing a laser phase
+            HL_0 = laser.Omega * (HL + HL.dag())
+            if laser.func:
+                print(laser.name)
+                print(laser.func)
+                HL_func = func_generator(funcs[laser.func], laser.name)
+                self.HL_t.append([HL_0, HL_func])
+                # self.HL_t.append([HL_0, lambda t, args: funcs[f](t, args, name=n)])
+            else:
+                self.HL_0.append(HL_0)
+        # self.HL = sum(self.HL)
         if self.cavity:
             name = self.cavity.name
             if self.params["zeeman"]:
@@ -196,7 +200,7 @@ class AtomSystem:
         #     self.H = [self.H0,[self.HL,params['pulseshape']]]
         # else:
         #     self.H = self.H0 + self.HL
-        self.H = self.H0 + self.HL + self.HB
+        self.H = self.H0 + sum(self.HL_0) + self.HB
         if self.cavity:
             self.H += self.Hc
 
@@ -236,21 +240,22 @@ class AtomSystem:
             )
             if self.cavity:
                 self.rho0 = qu.tensor(self.rho0, self.cavity.psi0)
-        # C_spon = np.sqrt(params['gamma'])*self.sm
-        # C_lw_g = np.sqrt(LW)*proj_g
-        # C_lw_e = np.sqrt(LW)*proj_e
-        # self.c_ops = [C_spon]
-        try:
-            options = qu.Options(store_states=True, rhs_reuse=False)
-            self.result = qu.mesolve(
-                self.H, self.rho0, tlist, c_ops=self.c_ops, options=options)
-        except Exception as e:
-            print("Failed to resue Hamiltonian data")
-            print(e)
-            options.rhs_reuse = False
-            self.result = qu.mesolve(
-                self.H, self.rho0, tlist, c_ops=self.c_ops, options=options)
-            print("solve succeeded with new rhs")
+
+            self.rho0 = self.rho0.unit()
+
+        options = qu.Options(store_states=True)
+        self.args = {}
+        for laser in self.lasers:
+            if laser.func:
+                self.args.update(laser.args)
+        self.result = qu.mesolve(
+            [self.H, *self.HL_t],
+            self.rho0,
+            tlist,
+            c_ops=self.c_ops,
+            options=options,
+            args=self.args,
+        )
 
         self.e_ops = {}
         for key, lst in self.projectors.items():
@@ -264,8 +269,6 @@ class AtomSystem:
                                 M_frac.numerator, M_frac.denominator
                             )
                             new_key = key + " $m_J=$" + M_frac
-                            # new_key = "|{}, {}>".format(key, M_frac)
-                            # new_key = key + "m <sub>J</sub> =" + M_frac
                     self.e_ops[new_key] = op
             else:
                 self.e_ops[key] = lst[0]

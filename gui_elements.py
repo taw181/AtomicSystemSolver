@@ -13,6 +13,7 @@ def add_framed_widget(widget_type, parent_layout, label="", args=None, kwargs=No
     layout.setSpacing(1)
     layout.addWidget(QLabel(label))
     widget = widget_type(*args, **kwargs)
+    widget.frame = frame
     layout.addWidget(widget)
     frame.setLayout(layout)
     parent_layout.addWidget(frame)

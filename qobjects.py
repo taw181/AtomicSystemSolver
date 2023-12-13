@@ -8,6 +8,7 @@ Created on Thu Dec 17 12:38:54 2020
 import numpy as np
 import qutip as qu
 import qutipfuncs as qf
+from H_funcs import default_args
 
 
 def _pol_from_stokes(S):
@@ -50,7 +51,9 @@ class Level:
 
 
 class Laser:
-    def __init__(self, L1="1", L2="2", Omega=0, Delta=0, lw=0, k=0, S=None):
+    def __init__(
+        self, L1="1", L2="2", Omega=0, Delta=0, lw=0, k=0, S=None, func="", args=None
+    ):
         self.L1 = L1
         self.L2 = L2
         self.name = L1 + L2
@@ -71,18 +74,41 @@ class Laser:
             self.S = np.array(self.S) / qf.norm(self.S)
         self.pol = _pol_from_stokes(self.S)
 
+        self.func = func
+        self.args = {}
+
+        if func and not args:
+            defaults = default_args[func]
+            for key, v in defaults.items():
+                self.args[self.name + key] = v
+        elif args:
+            for key, v in args.items():
+                self.args[self.name + key] = v
+
 
 class Decay:
-    def __init__(self, L1="1", L2="2", gamma=0):
+    def __init__(self, L1="1", L2="2", gamma=0, func=None):
         self.L1 = L1
         self.L2 = L2
         self.name = L1 + L2
         self.gamma = gamma
+        self.func = func
 
 
 class Cavity:
     def __init__(
-        self, L1="1", L2="2", g=0, kappa=0, Delta=0, N=2, n=0, modes="2", k=0, pol=None
+        self,
+        L1="1",
+        L2="2",
+        g=0,
+        kappa=0,
+        Delta=0,
+        N=2,
+        n=0,
+        modes="2",
+        k=0,
+        pol=None,
+        func=None,
     ):
         self.L1 = L1
         self.L2 = L2
@@ -102,3 +128,5 @@ class Cavity:
         self.modes = modes
         self.states = [qu.basis(self.N, i) for i in range(self.N)]
         self.psi0 = qu.basis(self.N, n)
+
+        self.func = func

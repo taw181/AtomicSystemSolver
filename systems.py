@@ -23,6 +23,8 @@ default_laser = {
     "k": 0,
     "S": [1, 1, 1],
     "lw": 0,
+    "func": '',
+    "args": {}
 }
 
 default_cavity = {
