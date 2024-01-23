@@ -328,7 +328,6 @@ class LevelWidget(QFrame):
         new_name = self.nameBox.text()
         edit_key_in_place(self.system_dict["levels"], old_name, new_name)
         edit_key_in_place(self.parent.levels_widget_dict, old_name, new_name)
-        print(self.system_dict)
         self.level_dict["name"] = new_name
         self.name = new_name
         pop = self.popBox.text()
@@ -346,10 +345,6 @@ class LevelWidget(QFrame):
             self.main_widget.cavities,
         ]:
             section.get_levels()
-
-        print(self.system_dict)
-        print(self.level_dict)
-
         self.main_widget.auto_update()
 
     def delete_level(self):
@@ -516,12 +511,8 @@ class CouplingWidget(QFrame):
             else:
                 coupling_dict["L1"] = self.groundBox.currentText()
                 coupling_dict["L2"] = self.excitedBox.currentText()
-            print(self.main_widget.system_dict["levels"].keys())
-            # coupling_dict["L1"] = self.groundBox.currentText()
-            # coupling_dict["L2"] = self.excitedBox.currentText()
         else:
             coupling_dict[key] = val
-        print(self.main_widget.system_dict)
         self.main_widget.auto_update()
 
     def get_pars(self):
@@ -529,18 +520,14 @@ class CouplingWidget(QFrame):
 
     def set_level_boxes(self):
         level_names = list(self.main_widget.system_dict["levels"].keys())
-        print(level_names)
         if self.coupling_dict["L1"] in level_names:
-            print("lower level {} found".format(self.coupling_dict["L1"]))
             find_or_add(self.groundBox, self.coupling_dict["L1"])
         else:
             find_or_add(self.groundBox, level_names[0])
             self.coupling_dict["L1"] = level_names[0]
         if self.coupling_dict["L2"] in level_names:
             find_or_add(self.excitedBox, self.coupling_dict["L2"])
-            print("upper level {} found".format(self.coupling_dict["L2"]))
         else:
-            print("upper level {} not found".format(self.coupling_dict["L2"]))
             find_or_add(self.excitedBox, level_names[1])
             self.coupling_dict["L2"] = level_names[1]
 
@@ -581,13 +568,20 @@ class LaserWidget(CouplingWidget):
         self.deltaBox.setSingleStep(0.1)
         self.deltaBox.setMaximum(100)
         self.deltaBox.setMinimum(-100)
+        
+        self.lwBox = add_framed_widget(QDoubleSpinBox, self.mainLayout, "lw")
+        self.lwBox.setSingleStep(0.1)
+        self.lwBox.setMaximum(100)
 
         self.funcBox = add_framed_widget(QComboBox, self.mainLayout, label="function")
         self.funcBox.addItem("")
         for key in funcs.keys():
             self.funcBox.addItem(key)
+        if "func" not in self.coupling_dict:
+            self.coupling_dict["func"] = ""
         idx = self.funcBox.findText(self.coupling_dict["func"])
         self.funcBox.setCurrentIndex(idx)
+        
         self.argLayout = QHBoxLayout()
         self.init_arg_boxes()
         self.set_func()
@@ -604,7 +598,6 @@ class LaserWidget(CouplingWidget):
             else:
                 args = default_args[func_name]
             for key, v in args.items():
-                print("setting {} to {}".format(key, v))
                 self.arg_boxes[key].blockSignals(True)
                 self.arg_boxes[key].setValue(v)
                 self.arg_boxes[key].blockSignals(False)
@@ -653,6 +646,7 @@ class LaserWidget(CouplingWidget):
 
         self.omegaBox.valueChanged.connect(lambda val: self.set_values("Omega", val))
         self.deltaBox.valueChanged.connect(lambda val: self.set_values("Delta", val))
+        self.lwBox.valueChanged.connect(lambda val: self.set_values("lw", val))
 
         self.kBox.valueChanged.connect(lambda val: self.set_values("k", val))
         self.s1Box.valueChanged.connect(lambda val: self.set_values("s1", val))
@@ -663,6 +657,7 @@ class LaserWidget(CouplingWidget):
         self.set_level_boxes()
         self.omegaBox.setValue(self.coupling_dict["Omega"])
         self.deltaBox.setValue(self.coupling_dict["Delta"])
+        self.lwBox.setValue(self.coupling_dict["lw"])
         self.kBox.setValue(self.coupling_dict["k"])
         self.s1Box.setValue(self.coupling_dict["S"][0])
         self.s2Box.setValue(self.coupling_dict["S"][1])
@@ -934,14 +929,18 @@ class SolverWidget(QGroupBox):
             json.dump(self.system_dict, outfile, indent=4)
 
     def solve_system(self):
-        try:
-            self.system_dict = self.parent.system_dict
-            self.system = build_system_from_dict(self.system_dict)
-            self.result, self.e_ops = self.system.solve()
-            self.main_widget.plotter.set_e_ops(self.e_ops)
-        except Exception as e:
-            print("Failed to solve system")
-            print(e)
+        # try:
+        #     self.system_dict = self.parent.system_dict
+        #     self.system = build_system_from_dict(self.system_dict)
+        #     self.result, self.e_ops = self.system.solve()
+        #     self.main_widget.plotter.set_e_ops(self.e_ops)
+        # except Exception as e:
+        #     print("Failed to solve system")
+        #     print(e)
+        self.system_dict = self.parent.system_dict
+        self.system = build_system_from_dict(self.system_dict)
+        self.result, self.e_ops = self.system.solve()
+        self.main_widget.plotter.set_e_ops(self.e_ops)
 
     def plot_expect(self):
         self.main_widget.plotter.set_e_ops(self.e_ops)
@@ -1076,8 +1075,8 @@ class GrotrianDiagram(QWidget):
 
     def initUI(self):
         # Create a Matplotlib figure and canvas
-        self.fig, self.ax = plt.subplots()
-        self.canvas = FigureCanvas(self.fig)
+        self.figure, self.ax = plt.subplots()
+        self.canvas = FigureCanvas(self.figure)
 
         # Set up the PyQt window
         self.layout = QVBoxLayout()
@@ -1323,8 +1322,6 @@ class GrotrianDiagram(QWidget):
         x_list = np.linspace(0, 5 * np.pi, 100)
         mode_y_p = 0.1 * np.sin(x_list) + y_circle
         mode_y_m = -0.1 * np.sin(x_list) + y_circle
-        # mode_p = plt.plot(mode_x, mode_y_p)
-        # mode_m = plt.plot(mode_x, mode_y_m)
         self.cavity_mode = plt.fill_between(mode_x, mode_y_p, mode_y_m, alpha=0)
 
     def add_cavity_mirrors(self, x, dx, y, dy, cavity):

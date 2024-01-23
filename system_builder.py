@@ -5,6 +5,8 @@ Created on Fri Dec 11 14:43:07 2020
 
 @author: tom
 """
+import copy
+import json
 import qutip as qu
 import numpy as np
 import qutipfuncs as quf
@@ -29,40 +31,64 @@ def build_system_from_dict(system_dict):
         cavities = [Cavity(**v)]
     try:
         atom_system = AtomSystem(
-            levels, lasers, decays, system_dict["params"], cavities
+            levels, lasers, system_dict["params"], decays=decays, cavities=cavities
         )
         return atom_system
     except Exception as e:
         print("Failed to build system")
         print(e)
+        atom_system = AtomSystem(
+                levels, lasers, system_dict["params"], decays=decays, cavities=cavities
+            )
+        return atom_system
 
 
 class AtomSystem:
-    def __init__(self, levels, lasers, decays, params, cavities):
-        qu.settings.auto_tidyup = True
-        qu.settings.auto_tidyup_atol = 1e-10
-        t0 = time.time()
+    def __init__(
+        self, levels, lasers, params, decays=None, cavities=None, verbose=False
+    ):
+        # qu.settings.auto_tidyup = True
+        # qu.settings.auto_tidyup_atol = 1e-10
         self.params = params
         self.levels = levels
-        self.cavity = cavities[0]
+        if not cavities:
+            cavities = []
+        if not decays:
+            decays = []
+        for decay in decays:
+            decay.system = self
+        if cavities:
+            self.cavity = cavities[0]
+        else:
+            self.cavity = None
         self.lasers = lasers
+        for laser in lasers:
+            laser.system = self
         self.decays = decays
         self.result = None
-        self.Bdir = [0, 0, 1]
-        # self.tlist = np.linspace(0,params['tmax'],params['steps'])
+        if params["Bdir"]:
+            self.Bdir = params["Bdir"]
+        else:
+            self.Bdir = [0, 0, 1]
+        self.verbose = verbose
+        self.last_state = None
+        self.build_hamiltonian(verbose)
+            
+    def build_hamiltonian(self, verbose=False):
+        t0 = time.time()
         self._atom()
         self._transitions()
         if self.cavity:
             self._cavity()
-
         self._Bfield()
-        # for laser in lasers:
-        #     quf.pol(laser,self.params['Bdir'])
         self._interactions()
         self._hamiltonian()
         self._decays()
+        self._rho()
+        self._e_ops()
         t = time.time() - t0
-        print("Time to build system: {}".format(round(t, 5)))
+        if self.verbose:
+            print("Time to build system: {}".format(round(t, 5)))
 
     def _atom(self):
         levels = self.levels
@@ -85,6 +111,7 @@ class AtomSystem:
 
     def _cavity(self):
         cavity = self.cavity
+        cavity.system = self
         N = cavity.N
         self.Ic = qu.qeye(N)
         for key in self.projectors.keys():
@@ -115,36 +142,35 @@ class AtomSystem:
                 if level_e.name != level_g.name:
                     Je = level_e.J
                     states_e = level_e.states
-                    if abs(Jg - Je) <= 1 or not self.params["zeeman"]:
-                        name = level_g.name + level_e.name
-                        if level_g.J != 0:
-                            self.Aops[name] = [
-                                sum(
-                                    [
-                                        states_g[i]
-                                        * states_e[j].dag()
-                                        * qu.clebsch(
-                                            Jg, 1, Je, level_g.M[i], k, level_e.M[j]
-                                        )
-                                        for i in range(level_g.N)
-                                        for j in range(level_e.N)
-                                    ]
-                                )
-                                for k in [-1, 0, 1]
-                            ]
-                        else:
-                            self.Aops[name] = [
-                                sum(
-                                    [
-                                        states_g[i] * states_e[j].dag()
-                                        for i in range(level_g.N)
-                                        for j in range(level_e.N)
-                                    ]
-                                )
-                            ]
+                    # if not self.params["zeeman"]:
+                    name = level_g.name + level_e.name
+                    if level_g.J != 0:
+                        self.Aops[name] = [
+                            sum(
+                                [
+                                    states_g[i]
+                                    * states_e[j].dag()
+                                    * qu.clebsch(
+                                        Jg, 1, Je, level_g.M[i], k, level_e.M[j]
+                                    )
+                                    for i in range(level_g.N)
+                                    for j in range(level_e.N)
+                                ]
+                            )
+                            for k in [-1, 0, 1]
+                        ]
+                    else:
+                        self.Aops[name] = [
+                            sum(
+                                [
+                                    states_g[i] * states_e[j].dag()
+                                    for i in range(level_g.N)
+                                    for j in range(level_e.N)
+                                ]
+                            )
+                        ]
 
     def _interactions(self):
-        cavity = self.cavity
         self.HL_0 = []
         self.HL_t = []
         for laser in self.lasers:
@@ -159,19 +185,17 @@ class AtomSystem:
                 )
             else:
                 HL = sum(self.Aops[name])
-            # H = laser.Omega * HL + np.conj(laser.Omega) * HL.dag() ## for allowing a laser phase
+
             HL_0 = laser.Omega * (HL + HL.dag())
             if laser.func:
-                print(laser.name)
-                print(laser.func)
                 HL_func = func_generator(funcs[laser.func], laser.name)
                 self.HL_t.append([HL_0, HL_func])
-                # self.HL_t.append([HL_0, lambda t, args: funcs[f](t, args, name=n)])
             else:
                 self.HL_0.append(HL_0)
-        # self.HL = sum(self.HL)
-        if self.cavity:
-            name = self.cavity.name
+
+        cavity = self.cavity
+        if cavity:
+            name = cavity.name
             if self.params["zeeman"]:
                 pol_c = quf.pol(cavity, self.Bdir)
                 Hc = sum(
@@ -183,8 +207,10 @@ class AtomSystem:
 
     def _hamiltonian(self):
         H0 = []
+        print(self.projectors)
         for laser in self.lasers:
             name = laser.L1
+            print(name)
             proj = sum(self.projectors[name])
             H0.append(laser.Delta * proj)
         if self.cavity:
@@ -196,10 +222,6 @@ class AtomSystem:
             H0.append((self.cavity.Delta - dL) * self.ad * self.a)
         self.H0 = sum(H0)
 
-        # if self.params['tdep']:
-        #     self.H = [self.H0,[self.HL,params['pulseshape']]]
-        # else:
-        #     self.H = self.H0 + self.HL
         self.H = self.H0 + sum(self.HL_0) + self.HB
         if self.cavity:
             self.H += self.Hc
@@ -209,16 +231,39 @@ class AtomSystem:
         for decay in self.decays:
             name = decay.name
             for Aop in self.Aops[name]:
-                c_op = np.sqrt(decay.gamma) * Aop
+                c_op = np.sqrt(decay.gamma) * Aop.dag()
                 self.c_ops.append(c_op)
         if self.cavity:
             name = self.cavity.name
-            c_op = np.sqrt(self.cavity.kappa) * self.a
+            c_op = np.sqrt(2 * self.cavity.kappa) * self.a
             self.c_ops.append(c_op)
+        for laser in self.lasers:
+            if laser.lw:
+                c = sum(self.projectors[laser.L1]) - sum(self.projectors[laser.L2])
+                c_op = np.sqrt(laser.lw) * c
+                self.c_ops.append(c_op)
 
-    def solve(self):
-        t0 = time.time()
-        tlist = np.linspace(0, self.params["t_max"], self.params["n_step"])
+    def _e_ops(self):
+        levels = self.levels
+        self.e_ops = {}
+        for key, lst in self.projectors.items():
+            if self.params["zeeman"]:
+                for i, op in enumerate(lst):
+                    for level in levels:
+                        if level.name == key:
+                            M_dec = str(level.M[i])
+                            M_frac = Fraction(M_dec)
+                            M_frac = "{}/{}".format(
+                                M_frac.numerator, M_frac.denominator
+                            )
+                            new_key = key + " $m_J=$" + M_frac
+                    self.e_ops[new_key] = op
+            else:
+                self.e_ops[key] = lst[0]
+        if self.cavity:
+            self.e_ops["n"] = self.ad * self.a
+
+    def _rho(self):
         levels = self.levels
         if self.params["mixed"]:
             self.rho0 = sum(
@@ -243,6 +288,15 @@ class AtomSystem:
 
             self.rho0 = self.rho0.unit()
 
+    def solve(self, verbose=False, rho0=None, cont_from_last_state=False):
+        t0 = time.time()
+        self.tlist = np.linspace(0, self.params["t_max"], self.params["n_step"])
+        if not rho0 and not cont_from_last_state:
+            self._rho()
+            rho0 = self.rho0
+        elif cont_from_last_state and self.last_state:
+            rho0 = self.last_state
+        self._e_ops
         options = qu.Options(store_states=True)
         self.args = {}
         for laser in self.lasers:
@@ -250,30 +304,45 @@ class AtomSystem:
                 self.args.update(laser.args)
         self.result = qu.mesolve(
             [self.H, *self.HL_t],
-            self.rho0,
-            tlist,
+            rho0,
+            self.tlist,
             c_ops=self.c_ops,
             options=options,
             args=self.args,
         )
-
-        self.e_ops = {}
-        for key, lst in self.projectors.items():
-            if self.params["zeeman"]:
-                for i, op in enumerate(lst):
-                    for level in levels:
-                        if level.name == key:
-                            M_dec = str(level.M[i])
-                            M_frac = Fraction(M_dec)
-                            M_frac = "{}/{}".format(
-                                M_frac.numerator, M_frac.denominator
-                            )
-                            new_key = key + " $m_J=$" + M_frac
-                    self.e_ops[new_key] = op
-            else:
-                self.e_ops[key] = lst[0]
-        if self.cavity:
-            self.e_ops["n"] = self.ad * self.a
+        self.last_state = self.result.states[-1]
         t = time.time() - t0
-        print("Time to solve system: {}".format(round(t, 5)))
+        if verbose:
+            print("Time to solve system: {}".format(round(t, 5)))
         return self.result, self.e_ops
+
+    def create_system_dict(self):
+        system_dict = {}
+        for level in self.levels:
+            d = level.create_dict()
+            system_dict["levels"][level.name] = d
+        system_dict["lasers"] = []
+        for laser in self.lasers:
+            d = laser.create_dict()
+            system_dict["lasers"].append(d)
+        system_dict["decays"] = []
+        for decay in self.decays:
+            d = decay.create_dict()
+            system_dict["decays"].append(d)
+        system_dict["cavities"] = []
+        if self.cavity:
+            d = self.cavity.create_dict()
+            system_dict["cavitiies"].append(d)
+        system_dict["params"] = self.params
+        return system_dict
+    
+    def save_system(self, name=None):
+        if not name:
+            name = sum([level.name for level in self.levels])
+        system_dict = self.create_system_dict()
+        with open("systems.json", "r+") as systems:
+            all_systems = json.load(systems)
+        
+        all_systems[name] = copy.deepcopy(system_dict)
+        with open("systems.json", "w") as systems:
+            json.dump(all_systems, systems, indent=4)

@@ -3,9 +3,11 @@ import json
 import numpy as np
 
 default_params = {
-    "freq_scaling": 2 * np.pi * 21e6,
+    # "freq_scaling": 2 * np.pi * 21e6,
+    "freq_scaling": 1,
     # "tlist": np.linspace(0, 10, 1000).tolist(),
     "B": 0,
+    "Bdir": None,
     "zeeman": False,
     "mixed": True,
     "t_start": 0,
