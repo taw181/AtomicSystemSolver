@@ -38,8 +38,8 @@ def build_system_from_dict(system_dict):
         print("Failed to build system")
         print(e)
         atom_system = AtomSystem(
-                levels, lasers, system_dict["params"], decays=decays, cavities=cavities
-            )
+            levels, lasers, system_dict["params"], decays=decays, cavities=cavities
+        )
         return atom_system
 
 
@@ -47,8 +47,8 @@ class AtomSystem:
     def __init__(
         self, levels, lasers, params, decays=None, cavities=None, verbose=False
     ):
-        # qu.settings.auto_tidyup = True
-        # qu.settings.auto_tidyup_atol = 1e-10
+        qu.settings.auto_tidyup = True
+        qu.settings.auto_tidyup_atol = 1e-10
         self.params = params
         self.levels = levels
         if not cavities:
@@ -73,7 +73,7 @@ class AtomSystem:
         self.verbose = verbose
         self.last_state = None
         self.build_hamiltonian(verbose)
-            
+
     def build_hamiltonian(self, verbose=False):
         t0 = time.time()
         self._atom()
@@ -101,9 +101,6 @@ class AtomSystem:
         n = 0
         for level in levels:
             states = [qu.basis(self.Nat, i) for i in n + np.arange(level.N)]
-            # if self.cavity:
-            #     N = self.cavity.N
-            #     states = [qu.tensor(astate,qu.qeye(N)) for astate in states]
             level.states = states
             self.projectors[level.name] = [i * i.dag() for i in states]
             n += level.N
@@ -116,12 +113,22 @@ class AtomSystem:
         self.Ic = qu.qeye(N)
         for key in self.projectors.keys():
             self.projectors[key] = [
-                qu.tensor(proj, qu.qeye(N)) for proj in self.projectors[key]
+                qu.tensor(proj, *[qu.qeye(N) for _ in range(cavity.modes)])
+                for proj in self.projectors[key]
             ]
         for key in self.Aops.keys():
-            self.Aops[key] = [qu.tensor(Aop, qu.qeye(N)) for Aop in self.Aops[key]]
-        self.a = qu.tensor(self.Iat, qu.destroy(N))
-        self.ad = self.a.dag()
+            self.Aops[key] = [
+                qu.tensor(Aop, *[qu.qeye(N) for _ in range(cavity.modes)])
+                for Aop in self.Aops[key]
+            ]
+        if cavity.modes == 1:
+            self.a = qu.tensor(self.Iat, qu.destroy(N))
+            self.ad = self.a.dag()
+        if cavity.modes == 2:
+            self.a = qu.tensor(self.Iat, qu.destroy(N), qu.qeye(N))
+            self.ad = self.a.dag()
+            self.a2 = qu.tensor(self.Iat, qu.qeye(N), qu.destroy(N))
+            self.ad2 = self.a2.dag()
 
     def _Bfield(self):
         self.HB = 0
@@ -176,7 +183,7 @@ class AtomSystem:
         for laser in self.lasers:
             name = laser.name
             if self.params["zeeman"]:
-                pol_at = quf.pol(laser, self.Bdir)
+                pol_at = quf.conv_field_pol(laser, self.Bdir)
                 HL = sum(
                     [
                         pol_at[i] * self.Aops[name][i]
@@ -196,14 +203,43 @@ class AtomSystem:
         cavity = self.cavity
         if cavity:
             name = cavity.name
-            if self.params["zeeman"]:
-                pol_c = quf.pol(cavity, self.Bdir)
-                Hc = sum(
-                    [pol_c[i] * self.Aops[name][i] for i in range(len(self.Aops[name]))]
+            if cavity.modes == 1:
+                if self.params["zeeman"]:
+                    if cavity.modes == 1:
+                        pol_c = quf.conv_field_pol(cavity, self.Bdir)
+                        Hc = sum(
+                            [
+                                pol_c[i] * self.Aops[name][i]
+                                for i in range(len(self.Aops[name]))
+                            ]
+                        )
+                else:
+                    Hc = sum(self.Aops[name])
+                self.Hc = (
+                    cavity.g * self.ad * Hc + np.conj(cavity.g) * self.a * Hc.dag()
                 )
-            else:
-                Hc = sum(self.Aops[name])
-            self.Hc = cavity.g * self.ad * Hc + np.conj(cavity.g) * self.a * Hc.dag()
+            elif cavity.modes == 2:
+                pol_c1 = quf.conv_pol(cavity.k, [cavity.pol[0], 0, 0], self.Bdir)
+                Hc1 = sum(
+                    [
+                        pol_c1[i] * self.Aops[name][i]
+                        for i in range(len(self.Aops[name]))
+                    ]
+                )
+                self.Hc1 = (
+                    cavity.g * self.ad * Hc1 + np.conj(cavity.g) * self.a * Hc1.dag()
+                )
+                pol_c2 = quf.conv_pol(cavity.k, [0, 0, cavity.pol[2]], self.Bdir)
+                Hc2 = sum(
+                    [
+                        pol_c2[i] * self.Aops[name][i]
+                        for i in range(len(self.Aops[name]))
+                    ]
+                )
+                self.Hc2 = (
+                    cavity.g * self.ad2 * Hc2 + np.conj(cavity.g) * self.a2 * Hc2.dag()
+                )
+                self.Hc = self.Hc1 + self.Hc2
 
     def _hamiltonian(self):
         H0 = []
@@ -219,7 +255,10 @@ class AtomSystem:
             for laser in self.lasers:
                 if laser.name == name:
                     dL = laser.Delta
-            H0.append((self.cavity.Delta - dL) * self.ad * self.a)
+            n_op = self.ad * self.a
+            if self.cavity.modes == 2:
+                n_op += self.ad2 * self.a2
+            H0.append((self.cavity.Delta - dL) * n_op)
         self.H0 = sum(H0)
 
         self.H = self.H0 + sum(self.HL_0) + self.HB
@@ -262,6 +301,8 @@ class AtomSystem:
                 self.e_ops[key] = lst[0]
         if self.cavity:
             self.e_ops["n"] = self.ad * self.a
+            if self.cavity.modes == 2:
+                self.e_ops["n2"] = self.ad2 * self.a2
 
     def _rho(self):
         levels = self.levels
@@ -335,14 +376,14 @@ class AtomSystem:
             system_dict["cavitiies"].append(d)
         system_dict["params"] = self.params
         return system_dict
-    
+
     def save_system(self, name=None):
         if not name:
             name = sum([level.name for level in self.levels])
         system_dict = self.create_system_dict()
         with open("systems.json", "r+") as systems:
             all_systems = json.load(systems)
-        
+
         all_systems[name] = copy.deepcopy(system_dict)
         with open("systems.json", "w") as systems:
             json.dump(all_systems, systems, indent=4)

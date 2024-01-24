@@ -142,11 +142,15 @@ def convMatPol(k, B):
     return U
 
 
-def pol(field, Bdir):
+def conv_pol(k, pol, Bdir):
     # convert polarisation of field to atom frame given quantisation axis Bdir
-    U = convMatPol(field.k, Bdir)
-    pol_at = adj(U).dot(field.pol)
+    U = convMatPol(k, Bdir)
+    pol_at = adj(U).dot(pol)
     return pol_at
+
+
+def conv_field_pol(field, Bdir):
+    return conv_pol(field.k, field.pol, Bdir)
 
 
 def ExEyDelta2Stokes(Ex, Ey, Delta):
