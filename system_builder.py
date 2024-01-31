@@ -37,10 +37,7 @@ def build_system_from_dict(system_dict):
     except Exception as e:
         print("Failed to build system")
         print(e)
-        atom_system = AtomSystem(
-            levels, lasers, system_dict["params"], decays=decays, cavities=cavities
-        )
-        return atom_system
+        return None
 
 
 class AtomSystem:
@@ -243,10 +240,18 @@ class AtomSystem:
 
     def _hamiltonian(self):
         H0 = []
-        print(self.projectors)
+        for level in self.levels:
+            level.laser_count = 0
+            name = level.name
+            for laser in self.lasers:
+                if name in (laser.L1, laser.L2):
+                    level.laser_count += 1
+        ref_level = self.levels[np.argmax([level.laser_count for level in self.levels])]
         for laser in self.lasers:
-            name = laser.L1
-            print(name)
+            if laser.L1 == ref_level:
+                name = laser.L2
+            else:
+                name = laser.L1
             proj = sum(self.projectors[name])
             H0.append(laser.Delta * proj)
         if self.cavity:

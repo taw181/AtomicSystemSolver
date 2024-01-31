@@ -111,9 +111,6 @@ class Laser(Coupling):
         system=None,
     ):
         super().__init__(L1, L2, func, args, system)
-        print(self.L1)
-        print(self.L2)
-        print(self.name)
         self._Omega = Omega
         self.Delta = Delta
         self.lw = lw

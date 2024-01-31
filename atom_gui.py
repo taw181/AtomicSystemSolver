@@ -568,7 +568,7 @@ class LaserWidget(CouplingWidget):
         self.deltaBox.setSingleStep(0.1)
         self.deltaBox.setMaximum(100)
         self.deltaBox.setMinimum(-100)
-        
+
         self.lwBox = add_framed_widget(QDoubleSpinBox, self.mainLayout, "lw")
         self.lwBox.setSingleStep(0.1)
         self.lwBox.setMaximum(100)
@@ -581,7 +581,7 @@ class LaserWidget(CouplingWidget):
             self.coupling_dict["func"] = ""
         idx = self.funcBox.findText(self.coupling_dict["func"])
         self.funcBox.setCurrentIndex(idx)
-        
+
         self.argLayout = QHBoxLayout()
         self.init_arg_boxes()
         self.set_func()
@@ -664,8 +664,8 @@ class LaserWidget(CouplingWidget):
         self.s3Box.setValue(self.coupling_dict["S"][2])
 
     def update_args(self):
-        if 'args' not in self.coupling_dict:
-            self.coupling_dict['args'] = {}
+        if "args" not in self.coupling_dict:
+            self.coupling_dict["args"] = {}
         for key, box in self.arg_boxes.items():
             self.coupling_dict["args"][key] = box.value()
         self.main_widget.auto_update()
@@ -929,18 +929,18 @@ class SolverWidget(QGroupBox):
             json.dump(self.system_dict, outfile, indent=4)
 
     def solve_system(self):
-        # try:
-        #     self.system_dict = self.parent.system_dict
-        #     self.system = build_system_from_dict(self.system_dict)
-        #     self.result, self.e_ops = self.system.solve()
-        #     self.main_widget.plotter.set_e_ops(self.e_ops)
-        # except Exception as e:
-        #     print("Failed to solve system")
-        #     print(e)
-        self.system_dict = self.parent.system_dict
-        self.system = build_system_from_dict(self.system_dict)
-        self.result, self.e_ops = self.system.solve()
-        self.main_widget.plotter.set_e_ops(self.e_ops)
+        try:
+            self.system_dict = self.parent.system_dict
+            self.system = build_system_from_dict(self.system_dict)
+            self.result, self.e_ops = self.system.solve()
+            self.main_widget.plotter.set_e_ops(self.e_ops)
+        except Exception as e:
+            print("Failed to solve system")
+            print(e)
+        # self.system_dict = self.parent.system_dict
+        # self.system = build_system_from_dict(self.system_dict)
+        # self.result, self.e_ops = self.system.solve()
+        # self.main_widget.plotter.set_e_ops(self.e_ops)
 
     def plot_expect(self):
         self.main_widget.plotter.set_e_ops(self.e_ops)
