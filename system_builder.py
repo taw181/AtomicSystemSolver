@@ -98,6 +98,7 @@ class AtomSystem:
         n = 0
         for level in levels:
             states = [qu.basis(self.Nat, i) for i in n + np.arange(level.N)]
+            self.astates.append(*states)
             level.states = states
             self.projectors[level.name] = [i * i.dag() for i in states]
             n += level.N
@@ -312,7 +313,7 @@ class AtomSystem:
     def _rho(self):
         levels = self.levels
         if self.params["mixed"]:
-            self.rho0 = sum(
+            self.rho0_atom = sum(
                 [
                     level.pop[i] * qu.ket2dm(level.states[i])
                     for level in levels
@@ -320,9 +321,11 @@ class AtomSystem:
                 ]
             )
             if self.cavity:
-                self.rho0 = qu.tensor(self.rho0, qu.ket2dm(self.cavity.psi0))
+                self.rho0 = qu.tensor(self.rho0_atom, qu.ket2dm(self.cavity.psi0))
+            else:
+                self.rho0 = self.rho0_atom
         else:
-            self.rho0 = sum(
+            self.rho0_atom = sum(
                 [
                     level.pop[i] * level.states[i]
                     for level in levels
@@ -330,7 +333,9 @@ class AtomSystem:
                 ]
             )
             if self.cavity:
-                self.rho0 = qu.tensor(self.rho0, self.cavity.psi0)
+                self.rho0 = qu.tensor(self.rho0_atom, self.cavity.psi0)
+            else:
+                self.rho0 = self.rho0_atom
 
             self.rho0 = self.rho0.unit()
 
